@@ -14,7 +14,7 @@ import {
 import { formatClock, lapProgress } from '../src/logic/lapProgress.ts';
 import { positionOnTrack } from '../src/logic/trackPosition.ts';
 import { formatDurationWords } from '../src/logic/sessionOptions.ts';
-import { clampLaps, lapsFromMinutes, maxMinutes, minutesForLaps } from '../src/logic/raceLength.ts';
+import { MAX_RACE_SECONDS, clampLaps, lapsFromMinutes, maxLaps, maxMinutes, minutesForLaps } from '../src/logic/raceLength.ts';
 import { lifetimeStats } from '../src/logic/stats.ts';
 import { buyLivery, equipLivery, ownsLivery, setCarNumber } from '../src/logic/garage.ts';
 import { normalizeProfile } from '../src/logic/profileMigration.ts';
@@ -30,6 +30,7 @@ import { NO_AWAY, RULES, addAway, classifyAway, pauseSecondsLeft, penaltyPercent
 import { glowHexFor, hexToRgb255 } from '../src/components/car3d/glow.ts';
 import { TRACK_LIST, isTrackUnlocked } from '../src/data/tracks/index.ts';
 import { applySessionToStreak, daysBetween, displayedStreak } from '../src/logic/streak.ts';
+import { MAX_STOPS, PIT_EXIT, TIRES, bestStrategy, decodeStrategy, encodeStrategy, isValidStrategy, minStops, pitLaps, splitLaps, stintIndexAt, stintRanges, stopperName, strategyOptions, tireLaps } from '../src/logic/strategy.ts';
 import { DEFAULT_SETTINGS, KM_PER_MILE, cleanDriverCode, driverCodeFor, formatDistance, normalizeSettings } from '../src/logic/settings.ts';
 
 const track = { id: 'silverstone', lapLengthKm: 5.891, lapTimeSeconds: 90 };
@@ -160,23 +161,28 @@ const raceTracks = [
 ];
 for (const t of raceTracks) {
   assert.equal(lapsFromMinutes(t, 0), 1); // never fewer than 1 lap
-  assert.equal(lapsFromMinutes(t, 100000), t.raceLaps); // never more than a full race
+  // races can run past the real distance, up to 2 hours of racing
+  assert.ok(maxLaps(t) > t.raceLaps);
+  assert.ok(maxLaps(t) * t.lapTimeSeconds <= MAX_RACE_SECONDS && (maxLaps(t) + 1) * t.lapTimeSeconds > MAX_RACE_SECONDS);
+  assert.equal(lapsFromMinutes(t, 100000), maxLaps(t)); // never more than 2 hours
   assert.equal(clampLaps(t, 0), 1);
-  assert.equal(clampLaps(t, t.raceLaps + 10), t.raceLaps);
-  assert.equal(maxMinutes(t), Math.round((t.raceLaps * t.lapTimeSeconds) / 60));
+  assert.equal(clampLaps(t, maxLaps(t) + 10), maxLaps(t));
+  assert.ok(maxMinutes(t) <= 120);
   for (let m = 1; m <= maxMinutes(t); m++) {
     const laps = lapsFromMinutes(t, m);
-    assert.ok(Number.isInteger(laps) && laps >= 1 && laps <= t.raceLaps, `${m} min -> ${laps} laps`);
+    assert.ok(Number.isInteger(laps) && laps >= 1 && laps <= maxLaps(t), `${m} min -> ${laps} laps`);
     // the race is within half a lap of the minutes asked for, unless clamped at the ends
-    if (laps > 1 && laps < t.raceLaps) assert.ok(Math.abs(laps * t.lapTimeSeconds - m * 60) <= t.lapTimeSeconds / 2 + 1e-9, `${m} min`);
+    if (laps > 1 && laps < maxLaps(t)) assert.ok(Math.abs(laps * t.lapTimeSeconds - m * 60) <= t.lapTimeSeconds / 2 + 1e-9, `${m} min`);
   }
-  for (let laps = 1; laps <= t.raceLaps; laps++) {
+  for (let laps = 1; laps <= maxLaps(t); laps++) {
     // placing the minutes slider for a lap count and reading it back gives the same laps (no jumping)
     assert.equal(lapsFromMinutes(t, minutesForLaps(t, laps)), laps, `laps ${laps} at ${t.lapTimeSeconds}s`);
   }
 }
 assert.equal(lapsFromMinutes(raceTracks[0], 15), 10); // 15 min at 90 s per lap = 10 laps
 assert.equal(minutesForLaps(raceTracks[0], 10), 15);
+assert.equal(maxLaps(raceTracks[0]), 80); // 2 h at 90 s a lap
+assert.equal(maxLaps(raceTracks[1]), 102); // 2 h at 70 s a lap
 
 // level progress
 assert.deepEqual(levelProgress(0), { level: 1, xpIntoLevel: 0, xpForNextLevel: 50, fraction: 0 });
@@ -422,7 +428,6 @@ for (const t of TRACK_LIST) {
   assert.match(t.countryCode, /^[A-Z]{2}$/, `${t.id} has a flag`);
 }
 
-console.log('all rule checks passed');
 
 // the 2022 and 2026 cars differ in the ways the 2026 rules say they should
 const f22 = specFacts(GEN2022, 'downwash');
@@ -450,10 +455,10 @@ assert.deepEqual(normalizeSettings(null, trackIds), DEFAULT_SETTINGS);
 assert.deepEqual(normalizeSettings('junk', trackIds), DEFAULT_SETTINGS);
 assert.deepEqual(normalizeSettings({}, trackIds), DEFAULT_SETTINGS);
 const kept = normalizeSettings(
-  { driverName: 'Lewis Hamilton', driverCode: 'ham', rememberLastRace: false, lastRace: { trackId: 'monaco', laps: 12 }, lengthMode: 'minutes', startLights: false, distanceUnit: 'mi', haptics: false },
+  { driverName: 'Lewis Hamilton', driverCode: 'ham', rememberLastRace: false, lastRace: { trackId: 'monaco', laps: 12 }, lengthMode: 'minutes', startLights: false, distanceUnit: 'mi', haptics: false, pitBreakMinutes: 5 },
   trackIds,
 );
-assert.deepEqual(kept, { driverName: 'Lewis Hamilton', driverCode: 'HAM', rememberLastRace: false, lastRace: { trackId: 'monaco', laps: 12 }, lengthMode: 'minutes', startLights: false, distanceUnit: 'mi', haptics: false });
+assert.deepEqual(kept, { driverName: 'Lewis Hamilton', driverCode: 'HAM', rememberLastRace: false, lastRace: { trackId: 'monaco', laps: 12 }, lengthMode: 'minutes', startLights: false, distanceUnit: 'mi', haptics: false, pitBreakMinutes: 5 });
 const mixed = normalizeSettings({ haptics: 'yes', distanceUnit: 'furlongs', lengthMode: 'hours', startLights: false, lastRace: { trackId: 'nurburgring', laps: 5 } }, trackIds);
 assert.equal(mixed.haptics, true);
 assert.equal(mixed.distanceUnit, 'km');
@@ -463,6 +468,8 @@ assert.equal(mixed.lastRace, null); // an unknown track is forgotten
 assert.equal(normalizeSettings({ lastRace: { trackId: 'spa', laps: 2.5 } }, trackIds).lastRace, null); // laps are whole
 assert.equal(normalizeSettings({ lastRace: { trackId: 'spa', laps: 0 } }, trackIds).lastRace, null);
 assert.equal(normalizeSettings({ driverCode: 'HA' }, trackIds).driverCode, ''); // a half-typed code is dropped
+assert.equal(normalizeSettings({ pitBreakMinutes: 9 }, trackIds).pitBreakMinutes, 3); // breaks are 2 to 5 minutes
+assert.equal(normalizeSettings({ pitBreakMinutes: 2 }, trackIds).pitBreakMinutes, 2);
 assert.equal(normalizeSettings({ driverName: 'x'.repeat(100) }, trackIds).driverName.length, 24);
 
 // driver codes
@@ -480,3 +487,85 @@ assert.equal(driverCodeFor({ driverName: '', driverCode: '' }), '');
 assert.deepEqual(formatDistance(5.891, 'km', 2), { value: '5.89', unit: 'km' });
 assert.deepEqual(formatDistance(5.891, 'mi', 2), { value: '3.66', unit: 'mi' });
 assert.deepEqual(formatDistance(KM_PER_MILE * 10, 'mi', 0), { value: '10', unit: 'mi' });
+
+// tire strategy: each tire has a target life and a longer maximum (the wiggle room)
+const silverstone = { lapTimeSeconds: 90, raceLaps: 52 };
+const monaco = { lapTimeSeconds: 70, raceLaps: 78 };
+assert.equal(tireLaps(silverstone, 'soft', 'target'), 10); // 15 min at 90 s a lap
+assert.equal(tireLaps(silverstone, 'medium', 'target'), 20);
+assert.equal(tireLaps(silverstone, 'hard', 'target'), 30);
+assert.equal(tireLaps(silverstone, 'hard', 'max'), 40); // hards last up to an hour
+assert.equal(tireLaps(monaco, 'soft', 'target'), 12); // rounded down: 12 laps is 14 min, never more than the tire allows
+assert.ok(Object.values(TIRES).every((t) => t.maxMinutes > t.targetMinutes));
+assert.equal(TIRES.hard.maxMinutes, 60);
+
+// laps are shared in proportion to tire life, whole, and never past a tire's maximum
+assert.deepEqual(splitLaps(silverstone, 40, ['medium', 'medium']), [{ compound: 'medium', laps: 20 }, { compound: 'medium', laps: 20 }]);
+assert.deepEqual(splitLaps(silverstone, 40, ['soft', 'hard']), [{ compound: 'soft', laps: 10 }, { compound: 'hard', laps: 30 }]);
+assert.equal(splitLaps(silverstone, 41, ['hard']), null); // over an hour on one set of tires
+assert.equal(splitLaps(silverstone, 30, ['soft', 'soft']), null); // two softs last 26 laps at most
+assert.equal(splitLaps(silverstone, 2, ['soft', 'soft', 'soft']), null); // more stints than laps
+for (let laps = 1; laps <= 80; laps++) {
+  for (const compounds of [['soft'], ['medium', 'hard'], ['hard', 'hard', 'hard'], ['soft', 'medium', 'hard', 'medium']]) {
+    const stints = splitLaps(silverstone, laps, compounds);
+    if (stints) assert.ok(isValidStrategy(silverstone, laps, { stints }), `${laps} laps on ${compounds}`);
+  }
+}
+
+// a race over an hour must have a stop; two hours of racing always fits in three stops
+assert.equal(minStops(silverstone, 40), 0); // exactly an hour
+assert.equal(minStops(silverstone, 41), 1);
+assert.equal(minStops(silverstone, 80), 1); // two hards
+assert.equal(minStops(monaco, 102), 1);
+assert.equal(bestStrategy(silverstone, 41, 0), null);
+for (const t of [silverstone, monaco, { lapTimeSeconds: 100, raceLaps: 44 }]) {
+  for (let laps = 1; laps <= maxLaps(t); laps++) {
+    const options = strategyOptions(t, laps);
+    assert.ok(options.length >= 1 && options[0].kind === 'recommended', `options for ${laps} laps`);
+    for (const o of options) assert.ok(isValidStrategy(t, laps, o.strategy) && pitLaps(o.strategy).length <= MAX_STOPS);
+    const minutes = (laps * t.lapTimeSeconds) / 60;
+    if (minutes > 60) assert.ok(options.every((o) => o.strategy.stints.length > 1), `${laps} laps needs a stop`);
+  }
+}
+
+// the recommended strategy: a break about every 45 minutes, stints as close to their tire's target as possible, even breaks
+const stints = (laps, stops) => bestStrategy(silverstone, laps, stops).stints.map((s) => `${TIRES[s.compound].letter}${s.laps}`).join(' ');
+assert.equal(stints(40, 1), 'M20 M20'); // 60 min: even mediums beat a soft then a hard
+assert.equal(stints(60, 1), 'H30 H30'); // 90 min
+assert.equal(strategyOptions(silverstone, 20)[0].strategy.stints.length, 1); // 30 min: no stop
+assert.equal(strategyOptions(silverstone, 30)[0].strategy.stints.length, 1); // 45 min: no stop
+assert.equal(strategyOptions(silverstone, 40)[0].strategy.stints.length, 2); // 60 min: one stop
+assert.equal(strategyOptions(silverstone, 80)[0].strategy.stints.length, 3); // 2 h: two stops
+assert.deepEqual(strategyOptions(silverstone, 40).map((o) => o.kind), ['recommended', 'fewer', 'more']);
+assert.deepEqual(strategyOptions(silverstone, 4).map((o) => o.kind), ['recommended']); // 6 min: no extra stop offered
+
+// pits, stints, names and links
+const plan = { stints: [{ compound: 'medium', laps: 20 }, { compound: 'hard', laps: 25 }, { compound: 'soft', laps: 8 }] };
+assert.deepEqual(pitLaps(plan), [20, 45]);
+assert.deepEqual(stintRanges(plan.stints), [{ from: 1, to: 20 }, { from: 21, to: 45 }, { from: 46, to: 53 }]);
+assert.equal(stintIndexAt(plan, 0), 0);
+assert.equal(stintIndexAt(plan, 19), 0);
+assert.equal(stintIndexAt(plan, 20), 1); // in the pits after lap 20: on to the second stint
+assert.equal(stintIndexAt(plan, 52), 2);
+assert.equal(stopperName(0), 'No-stopper');
+assert.equal(stopperName(2), 'Two-stopper');
+assert.equal(encodeStrategy(plan), 'm20-h25-s8');
+assert.deepEqual(decodeStrategy('m20-h25-s8'), plan);
+assert.equal(decodeStrategy('x20'), null);
+assert.equal(decodeStrategy('m20--h3'), null);
+assert.equal(decodeStrategy(undefined), null);
+assert.ok(isValidStrategy(silverstone, 53, plan));
+assert.ok(!isValidStrategy(silverstone, 52, plan)); // must cover exactly the race
+assert.ok(!isValidStrategy(silverstone, 61, { stints: [{ compound: 'soft', laps: 21 }, { compound: 'hard', laps: 40 }] })); // softs last 20 laps here
+assert.ok(PIT_EXIT.slowStopAfterSeconds < PIT_EXIT.crashAfterSeconds && PIT_EXIT.crashAfterSeconds === 180);
+
+// slow pit stops count as warnings toward the rewards penalty
+assert.equal(penaltyPercent(NO_AWAY, 2), 10);
+const pitted = buildSession({ id: 'pit', track, plannedLaps: 10, focusedSeconds: 900, startedAt: start, endedAt: start, away: warnings(1, 0), slowStops: 1, strategy: { stints: [{ compound: 'soft', laps: 5 }, { compound: 'soft', laps: 5 }], pitBreakSeconds: 180 }, pitStops: [{ lap: 5, seconds: 250.4 }] });
+assert.equal(pitted.rewardPenaltyPercent, 10);
+assert.equal(pitted.slowStops, 1);
+assert.deepEqual(pitted.pitStops, [{ lap: 5, seconds: 250 }]);
+assert.equal(pitted.strategy.pitBreakSeconds, 180);
+assert.equal(buildSession({ id: 'np', track, plannedLaps: 10, focusedSeconds: 900, startedAt: start, endedAt: start }).pitStops, undefined);
+
+console.log('all rule checks passed');

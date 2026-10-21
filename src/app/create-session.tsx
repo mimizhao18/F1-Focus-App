@@ -8,7 +8,7 @@ import { TrackCarousel } from '../components/TrackCarousel';
 import { SectionLabel, SegmentedControl, StartButton } from '../components/ui';
 import { TRACK_LIST, isTrackId, isTrackUnlocked } from '../data/tracks';
 import { makeStyles } from '../design/styles';
-import { clampLaps, lapsFromMinutes, maxMinutes, minutesForLaps } from '../logic/raceLength';
+import { clampLaps, lapsFromMinutes, maxLaps, maxMinutes, minutesForLaps } from '../logic/raceLength';
 import { distanceKm, lapsToSeconds, levelForXp } from '../logic/rewards';
 import { DEFAULT_LAPS, formatDurationWords } from '../logic/sessionOptions';
 import { formatDistance } from '../logic/settings';
@@ -54,8 +54,10 @@ export default function CreateSessionScreen() {
   );
 
   const track = TRACK_LIST.find((t) => t.id === trackId) ?? TRACK_LIST[0];
-  // Laps are always whole, and never more than a full race at this track (matters after switching tracks).
+  // Laps are always whole, and never more than 2 hours of racing at this track (matters after switching tracks).
+  // A race can run past the real race distance; the Strategy screen next plans the pit stops for a long one.
   const laps = clampLaps(track, requestedLaps);
+  const extraLaps = laps - track.raceLaps;
   const seconds = lapsToSeconds(track, laps);
   const km = distanceKm(track, laps);
   const isFullRace = laps === track.raceLaps;
@@ -64,7 +66,7 @@ export default function CreateSessionScreen() {
   const start = () => {
     if (settings.rememberLastRace) void updateSettings({ lastRace: { trackId: track.id, laps } }).catch(() => {});
     router.push({
-      pathname: '/session',
+      pathname: '/strategy',
       params: { track: track.id, laps: String(laps), ...(__DEV__ && speed > 1 ? { speed: String(speed) } : {}) },
     });
   };
@@ -89,22 +91,24 @@ export default function CreateSessionScreen() {
           <Text style={styles.bigValue}>{bigValue}</Text>
           <Text style={styles.muted}>{subValue}</Text>
           {isFullRace && <Text style={styles.fullRace}>Full race distance</Text>}
+          {extraLaps > 0 && <Text style={styles.fullRace}>Extended race · +{extraLaps} {extraLaps === 1 ? 'lap' : 'laps'}</Text>}
         </View>
 
         {mode === 'laps' ? (
-          <Slider value={laps} min={1} max={track.raceLaps} onChange={setRequestedLaps} accessibilityLabel="Race length in laps" />
+          <Slider value={laps} min={1} max={maxLaps(track)} mark={track.raceLaps} onChange={setRequestedLaps} accessibilityLabel="Race length in laps" />
         ) : (
           <Slider
             value={minutesForLaps(track, laps)}
             min={1}
             max={maxMinutes(track)}
+            mark={minutesForLaps(track, track.raceLaps)}
             onChange={(minutes) => setRequestedLaps(lapsFromMinutes(track, minutes))}
             accessibilityLabel="Race length in minutes"
           />
         )}
         <View style={styles.rangeLabels}>
           <Text style={styles.range}>{mode === 'laps' ? '1 lap' : '1 min'}</Text>
-          <Text style={styles.range}>{mode === 'laps' ? `${track.raceLaps} laps` : `${maxMinutes(track)} min`}</Text>
+          <Text style={styles.range}>{mode === 'laps' ? `${maxLaps(track)} laps` : `${maxMinutes(track)} min`}</Text>
         </View>
         {mode === 'minutes' && <Text style={styles.muted}>Races are whole laps, so the time snaps to the nearest lap.</Text>}
 
@@ -117,7 +121,7 @@ export default function CreateSessionScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <StartButton label={locked ? `Locked · Level ${track.unlockLevel}` : 'Start Race'} onPress={start} frame disabled={locked} />
+        <StartButton label={locked ? `Locked · Level ${track.unlockLevel}` : 'Choose strategy'} onPress={start} frame disabled={locked} />
       </View>
     </SafeAreaView>
   );

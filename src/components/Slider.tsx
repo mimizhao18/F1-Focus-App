@@ -10,6 +10,8 @@ interface Props {
   step?: number;
   onChange: (value: number) => void;
   accessibilityLabel?: string;
+  /** A small tick under the bar at this value. */
+  mark?: number;
 }
 
 const useStyles = makeStyles((t) => ({
@@ -18,10 +20,11 @@ const useStyles = makeStyles((t) => ({
   fill: { height: '100%', backgroundColor: t.colors.accent },
   // a slim upright handle with almost square corners, in the same white as the text
   thumb: { position: 'absolute', width: t.size.thumbWidth, height: t.size.thumbHeight, borderRadius: t.radius.control / 2, backgroundColor: t.colors.text },
+  mark: { position: 'absolute', top: t.size.control / 2 + t.size.progress, width: t.border.hairline, height: t.size.tick, backgroundColor: t.colors.textMuted },
 }));
 
 /** A simple horizontal slider that snaps to `step`. Touch or drag anywhere along the bar. */
-export function Slider({ value, min, max, step = 1, onChange, accessibilityLabel }: Props) {
+export function Slider({ value, min, max, step = 1, onChange, accessibilityLabel, mark }: Props) {
   const styles = useStyles();
   const { size } = useTheme();
   const [width, setWidth] = useState(0);
@@ -64,6 +67,7 @@ export function Slider({ value, min, max, step = 1, onChange, accessibilityLabel
       <View ref={barRef} style={[styles.bar, { pointerEvents: 'none' }]} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
         <View style={[styles.fill, { width: `${fraction * 100}%` }]} />
       </View>
+      {mark !== undefined && max > min && <View style={[styles.mark, { left: ((mark - min) / (max - min)) * width, pointerEvents: 'none' }]} />}
       <View style={[styles.thumb, { left: thumbLeft, pointerEvents: 'none' }]} />
     </View>
   );

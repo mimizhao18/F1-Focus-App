@@ -55,6 +55,15 @@ export interface Point {
   y: number;
 }
 
+/** A tire compound (see logic/strategy.ts). */
+export type Compound = 'soft' | 'medium' | 'hard';
+
+/** One stint of a race: some laps on one set of tires. */
+export interface Stint {
+  compound: Compound;
+  laps: number;
+}
+
 export interface Session {
   id: string;
   trackId: TrackId;
@@ -79,6 +88,12 @@ export interface Session {
   rewardPenaltyPercent?: number;
   /** True if the race ended in a crash because you were away for too long (a DNF). */
   crashed?: boolean;
+  /** The tire strategy and pit stop break length planned for the race (see logic/strategy.ts). Missing on races before pit stops. */
+  strategy?: { stints: Stint[]; pitBreakSeconds: number };
+  /** The pit stops taken: the lap you pitted after and how long you stayed (seconds, overstay included). */
+  pitStops?: { lap: number; seconds: number }[];
+  /** Pit stops where you stayed more than a minute past your break (each one counts as a warning). */
+  slowStops?: number;
 }
 
 export interface CarSettings {

@@ -63,6 +63,10 @@ export interface SessionInput {
   /** Distractions during the race (see logic/distraction.ts). */
   away?: AwayTotals;
   crashed?: boolean;
+  /** The planned strategy and the pit stops taken (see logic/strategy.ts). */
+  strategy?: Session['strategy'];
+  pitStops?: Session['pitStops'];
+  slowStops?: number;
 }
 
 /** `amount` with `percent` taken off, rounded down (whole numbers only, so no rounding surprises). */
@@ -77,7 +81,8 @@ export function buildSession(input: SessionInput): Session {
   const focusedSeconds = Math.max(0, Math.min(Math.floor(input.focusedSeconds), plannedSeconds));
   const laps = completedLaps(track, focusedSeconds, plannedLaps);
   const away = input.away ?? NO_AWAY;
-  const penalty = penaltyPercent(away);
+  const slowStops = input.slowStops ?? 0;
+  const penalty = penaltyPercent(away, slowStops);
   return {
     id: input.id,
     trackId: track.id,
@@ -93,5 +98,8 @@ export function buildSession(input: SessionInput): Session {
     ...(input.away && input.away.seconds > 0 ? { awaySeconds: Math.round(input.away.seconds), trackLimits: input.away.trackLimits, yellowFlags: input.away.yellowFlags } : {}),
     ...(penalty > 0 ? { rewardPenaltyPercent: penalty } : {}),
     ...(input.crashed ? { crashed: true } : {}),
+    ...(input.strategy ? { strategy: input.strategy } : {}),
+    ...(input.pitStops && input.pitStops.length > 0 ? { pitStops: input.pitStops.map((s) => ({ lap: s.lap, seconds: Math.round(s.seconds) })) } : {}),
+    ...(slowStops > 0 ? { slowStops } : {}),
   };
 }

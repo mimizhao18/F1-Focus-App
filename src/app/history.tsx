@@ -4,6 +4,7 @@ import { FlatList, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Flag } from '../components/Flag';
+import { TireStrategyBar } from '../components/TireStrategyBar';
 import { BracketFrame, Button, SectionLabel, StatBlock } from '../components/ui';
 import { TRACKS } from '../data/tracks';
 import { makeStyles, useTheme } from '../design/styles';
@@ -134,6 +135,7 @@ function SessionRow({ session, last }: { session: Session; last: boolean }) {
         <Text style={styles.muted}>
           {session.completedLaps}/{session.plannedLaps} laps · {formatDurationWords(session.focusedSeconds)} · {distance.value} {distance.unit}
         </Text>
+        {session.strategy && session.strategy.stints.length > 1 && <TireStrategyBar stints={session.strategy.stints} size="small" completedLaps={session.completedLaps} />}
       </View>
       <View style={styles.rowSide}>
         <Text style={styles.rowXp}>+{session.xpEarned} XP</Text>

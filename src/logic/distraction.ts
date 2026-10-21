@@ -4,7 +4,7 @@
 //   30 s to 3 min  yellow flag            a stronger warning when you come back
 //   3 min or more  crash                  the race ends with a DNF
 // Pausing first excuses a break of up to 5 minutes. After that, time away counts as a distraction again.
-// Two or more warnings (track limits warnings and yellow flags together) also cut the XP and credits you earn:
+// Two or more warnings (track limits warnings, yellow flags and slow pit stops together) also cut the XP and credits you earn:
 // 10% off for two, another 10% for each further one, never more than 50%.
 
 export const RULES = {
@@ -57,19 +57,19 @@ export function addAway(totals: AwayTotals, awaySeconds: number): AwayTotals {
   };
 }
 
-/** The warnings in a race that count toward the rewards penalty. */
-export function warningCount(totals: AwayTotals): number {
-  return totals.trackLimits + totals.yellowFlags;
+/** The warnings in a race that count toward the rewards penalty: track limits warnings, yellow flags and slow pit stops. */
+export function warningCount(totals: AwayTotals, slowStops = 0): number {
+  return totals.trackLimits + totals.yellowFlags + slowStops;
 }
 
 /** The percent taken off XP and credits for the warnings in a race: 0 for none or one, 10 for two, 20 for three, up to 50. */
-export function penaltyPercent(totals: AwayTotals): number {
-  const warnings = warningCount(totals);
+export function penaltyPercent(totals: AwayTotals, slowStops = 0): number {
+  const warnings = warningCount(totals, slowStops);
   if (warnings <= PENALTY.freeWarnings) return 0;
   return Math.min(PENALTY.maxPercent, (warnings - PENALTY.freeWarnings) * PENALTY.stepPercent);
 }
 
 /** What the rewards are multiplied by: 1 for no penalty, 0.9 for 10%, and so on. */
-export function rewardMultiplier(totals: AwayTotals): number {
-  return 1 - penaltyPercent(totals) / 100;
+export function rewardMultiplier(totals: AwayTotals, slowStops = 0): number {
+  return 1 - penaltyPercent(totals, slowStops) / 100;
 }

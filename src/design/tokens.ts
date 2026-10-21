@@ -30,6 +30,15 @@ export const colors = {
 
   /** The credits coin. */
   coin: '#F4F4F5',
+
+  /** Tire compounds, as on the sidewall band of a real tire: soft red, medium yellow, hard white. */
+  tireSoft: '#DA291C',
+  tireMedium: '#FFD12E',
+  tireHard: '#F2F2F2',
+  /** The tire itself and its wheel rim. */
+  rubber: '#0C0C0E',
+  rim: '#8E8E96',
+  rimDark: '#2C2C31',
 } as const;
 
 /** UI font (Inter) and numerals font (JetBrains Mono, whose digits are all the same width). Only weights 400, 500 and 600. */
@@ -77,7 +86,7 @@ export const theme = {
   },
   border: { hairline: 1, selected: 1.5 },
   /** Fixed sizes: every touch target is at least `touch`, buttons and rows are taller. */
-  size: { touch: 44, control: 48, row: 56, tabBar: 48, progress: 4, icon: 22, heroCompact: 176, hero: 260, dialog: 340, weekBar: 64, thumbWidth: 10, thumbHeight: 28, flag: 24, raceReserved: 400, raceReservedCompact: 330, iconCar: 180, cardCar: 76, cardCarWide: 170, gantry: 340, primary: 56, tick: 8, tickRadius: 3, chevron: 14, swipeStart: 16, swipe: 64, swipeSpeed: 0.5, line: 2, field: 180, segmentWide: 168, segmentNarrow: 112 },
+  size: { touch: 44, control: 48, row: 56, tabBar: 48, progress: 4, icon: 22, heroCompact: 176, hero: 260, dialog: 340, weekBar: 64, thumbWidth: 10, thumbHeight: 28, flag: 24, raceReserved: 400, raceReservedCompact: 330, iconCar: 180, cardCar: 76, cardCarWide: 170, gantry: 340, primary: 56, tick: 8, tickRadius: 3, chevron: 14, swipeStart: 16, swipe: 64, swipeSpeed: 0.5, line: 2, field: 180, segmentWide: 168, segmentNarrow: 112, tireSmall: 14, tire: 28, tirePick: 36, tireLarge: 48 },
   opacity: { disabled: 0.4, dimmed: 0.5, unaffordable: 0.68, pressed: 0.85 },
   /** Text styles, ready to spread into a style object. Numbers (stats, timers, XP, credits) use the mono ones. */
   typography: {

@@ -12,6 +12,9 @@ const FEEDBACK = {
   warning: () => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning),
   crash: () => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error),
   toggle: () => Haptics.selectionAsync(),
+  'box-box': () => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning),
+  'pit-in': () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy),
+  'pit-exit': () => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success),
 } as const;
 
 export type HapticEvent = keyof typeof FEEDBACK;

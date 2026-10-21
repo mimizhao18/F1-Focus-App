@@ -46,6 +46,15 @@ Run the typecheck and lint before calling any change done (required by `AGENTS.m
 - Distance = completed laps x the track's lap length (Silverstone: 5.891 km).
 - You can **pause** at any time. **End early** is only offered (and only allowed by the timer) while paused.
 - A race shorter than **1 minute** earns nothing and is not saved.
+- A race can run **past the real race distance**, up to **2 hours of racing** (`logic/raceLength.ts`); pit stop breaks come on top.
+
+### Tires and pit stops
+Pit stops are the planned breaks in a long race (`src/logic/strategy.ts`, tested in `npm run check`).
+- Each stint runs on one compound. A tire has a target life and some wiggle room past it: **soft 15 min (up to 20), medium 30 (up to 40), hard 45 (up to 60)**. A stint is whole laps, rounded down, and never runs past its tire's maximum, so **a race over an hour must have a stop**. At most 3 stops.
+- The **Strategy** screen (after New Race) offers the **recommended** strategy first (a break about every 45 minutes, no fewer stops than the tires need, stints as close to their tire's target as possible and as even as possible), then one stop **fewer** and one stop **more** where they work, and **Build your own** (number of stops and a compound per stint; laps are shared out in proportion to tire life). The pit stop break is **2 to 5 minutes**, remembered in `settings.v1`.
+- In the race, a strip under the lap counter shows the current tire and when you box; the last lap of a stint shows a **"Box, box"** call. At the end of the stint the race clock stops and the **pit stop screen** covers the race: the tire change (each corner swaps to the new compound), then the break counting down. Leaving the app during the break is fine.
+- When the break ends the **pit exit opens and the race waits for you**. More than **1 minute** late is a **slow stop** (a warning that counts toward the rewards penalty like track limits); **3 minutes** late ends the race with a **DNF**.
+- Test speed (development) shortens the breaks too, but not the 1 and 3 minute pit exit limits.
 
 ### Rewards
 - **1 XP and 1 credit per full minute focused.** Ending early still pays for the time you focused.
@@ -67,7 +76,7 @@ Run the typecheck and lint before calling any change done (required by `AGENTS.m
 Everything is stored **on the phone only**, using AsyncStorage (no accounts, no server):
 - `profile.v1`: total XP, credits, streak, owned liveries, and the car (livery id and race number).
 - `sessions.v1`: the list of finished races.
-- `settings.v1`: the player's preferences (`src/logic/settings.ts`): driver name and code, remember last race (and the last race itself), laps or minutes, start lights on/off, km or miles, haptics on/off. Read once at launch (the splash screen waits for it) into one shared copy (`src/storage/settings.ts`); screens read it with `useSettings()` and change it with `updateSettings()`, so a change shows everywhere at once. Every bad or missing field falls back to its default on its own.
+- `settings.v1`: the player's preferences (`src/logic/settings.ts`): driver name and code, remember last race (and the last race itself), laps or minutes, start lights on/off, km or miles, haptics on/off, pit stop break length. Read once at launch (the splash screen waits for it) into one shared copy (`src/storage/settings.ts`); screens read it with `useSettings()` and change it with `updateSettings()`, so a change shows everywhere at once. Every bad or missing field falls back to its default on its own.
 
 Older saved profiles are upgraded automatically when fields change (`src/logic/profileMigration.ts`); for example, saves from the paint-color days keep their XP, credits and streak and get the default livery. **Settings > Reset all data** wipes all three.
 
@@ -76,9 +85,10 @@ Older saved profiles are upgraded automatically when fields change (`src/logic/p
 | Screen | File | Purpose |
 |---|---|---|
 | Home | `src/app/index.tsx` | Level and XP bar, credits, your car in 3D, stats, Start Race |
-| New Race | `src/app/create-session.tsx` | Swipe between three **circuit cards** (inspired by the F1 circuit graphics: the flag beside the circuit name in large bold with the country below, the track outline, and bordered stat blocks for circuit length, race laps, race distance and lap time), then set the race length with a slider (round handle) that toggles between **laps** and **minutes** (minutes snap to whole laps). In development builds it also has a **Test speed** row (10x/30x/60x) so races finish quickly |
-| Race | `src/app/session.tsx` | Live race: track with the moving car, lap counter, time remaining, pause/resume/end. Saves the race when it ends |
-| Summary | `src/app/summary.tsx` | Laps, time, distance, XP and credits earned, level progress, streak |
+| New Race | `src/app/create-session.tsx` | Swipe between three **circuit cards** (inspired by the F1 circuit graphics: the flag beside the circuit name in large bold with the country below, the track outline, and bordered stat blocks for circuit length, race laps, race distance and lap time), then set the race length with a slider (round handle) that toggles between **laps** and **minutes** (minutes snap to whole laps). The slider goes up to 2 hours of racing, with a tick at the real race distance and an "Extended race" label past it. **Choose strategy** goes on to the Strategy screen. In development builds it also has a **Test speed** row (10x/30x/60x) so races finish quickly |
+| Strategy | `src/app/strategy.tsx` | Tire strategy and pit stops, drawn like a broadcast strategy graphic (`components/TireStrategyBar.tsx`, `components/TireIcon.tsx`): the recommended strategy first, alternatives, Build your own, the pit stop length and the totals (racing, stops, time in the pits, finish time) |
+| Race | `src/app/session.tsx` | Live race: track with the moving car, lap counter, the current tire and when to box, time remaining, pause/resume/end. The pit stop screen (`components/PitStop.tsx`) covers it during a stop. Saves the race when it ends |
+| Summary | `src/app/summary.tsx` | Laps, time, distance, XP and credits earned, the strategy and each pit stop, level progress, streak |
 | History | `src/app/history.tsx` | Current and longest streak, last-7-days chart, list of past races |
 | Garage | `src/app/garage.tsx` | Your liveries: 3D preview, race icon, collection progress, era filters, equip, change race number |
 | Store | `src/app/store.tsx` | Liveries you do not own: filters, sorting, a card grid |
@@ -110,7 +120,8 @@ Design rule: **rules live in `src/logic/`** as plain functions, and screens only
 - `logic/rewards.ts`: laps/time/distance conversions, XP and credits, levels, building a saved session record.
 - `logic/lapProgress.ts`: turns "planned laps + elapsed seconds" into current lap, completed laps and how far through the lap (0 to 1).
 - `logic/trackPosition.ts`: turns a lap fraction into the car's position and heading on the track, using a smooth curve through the traced points so turning is not jerky.
-- `logic/raceLength.ts`: converts between laps and minutes for the race-length slider (always whole laps).
+- `logic/raceLength.ts`: converts between laps and minutes for the race-length slider (always whole laps, at most 2 hours of racing).
+- `logic/strategy.ts`: tire life, splitting laps into stints, the recommended strategies, and the pit exit limits.
 - `logic/streak.ts`, `logic/history.ts`, `logic/stats.ts`, `logic/garage.ts`, `logic/sessionOptions.ts`: streaks, the weekly chart, lifetime totals, buying and equipping, formatting.
 - `hooks/useSessionTimer.ts`: the race clock (idle, running, paused, finished, ended). Elapsed time comes from the real clock, not counted ticks, so it stays correct if the app is throttled. Updates once per screen frame for smooth motion.
 - `storage/`: `storage.ts` wraps AsyncStorage and falls back to defaults if data is missing or corrupt; `profile.ts` and `sessions.ts` hold the profile and race list; `sessions.ts > recordSession` saves a race and adds its rewards to the profile.

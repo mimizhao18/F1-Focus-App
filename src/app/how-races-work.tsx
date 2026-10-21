@@ -1,12 +1,15 @@
 import { ScrollView, Text, View } from 'react-native';
 
+import { TireIcon } from '../components/TireIcon';
 import { ListRow, SectionLabel } from '../components/ui';
 import { TRACKS, TRACK_LIST } from '../data/tracks';
 import { makeStyles } from '../design/styles';
 import { PENALTY, RULES } from '../logic/distraction';
 import { formatClock } from '../logic/lapProgress';
+import { MAX_RACE_SECONDS } from '../logic/raceLength';
 import { xpForLevel } from '../logic/rewards';
 import { formatDurationWords } from '../logic/sessionOptions';
+import { COMPOUNDS, MAX_STOPS, PIT_BREAK_MINUTES, PIT_EXIT, TIRES } from '../logic/strategy';
 
 // Every number on this page comes from the rules themselves (logic/distraction.ts, logic/rewards.ts, the track data),
 // so the page stays right when a rule changes.
@@ -29,7 +32,30 @@ export default function HowRacesWorkScreen() {
         <Text style={styles.body}>
           You choose a track and a number of whole laps. Every track has one lap time: its real lap record, rounded to the nearest 10 seconds. At {EXAMPLE.name} a lap takes {formatClock(EXAMPLE.lapTimeSeconds)}, so {EXAMPLE_LAPS} laps are {words(EXAMPLE.lapTimeSeconds * EXAMPLE_LAPS)} of focus.
         </Text>
-        <Text style={styles.body}>The clock starts when the five start lights go out (or straight away if you turned the lights off in Settings).</Text>
+        <Text style={styles.body}>
+          A race can run past the real race distance, up to {words(MAX_RACE_SECONDS)} of racing. The clock starts when the five start lights go out (or straight away if you turned the lights off in Settings).
+        </Text>
+      </View>
+
+      <View style={styles.section}>
+        <SectionLabel>Tires and pit stops</SectionLabel>
+        <Text style={styles.body}>
+          Pit stops are the breaks in a long race. After choosing your laps you pick a tire strategy: each stint runs on one set of tires, and you pit between stints (up to {MAX_STOPS} stops). Each tire has a target life, and some wiggle room past it:
+        </Text>
+        <View>
+          {COMPOUNDS.map((c, i) => (
+            <View key={c} style={[styles.tireRow, i === COMPOUNDS.length - 1 && styles.tireRowLast]}>
+              <TireIcon compound={c} letter />
+              <Text style={styles.tireName}>{TIRES[c].name}</Text>
+              <Text style={styles.tireValue}>
+                {TIRES[c].targetMinutes} min, up to {TIRES[c].maxMinutes}
+              </Text>
+            </View>
+          ))}
+        </View>
+        <Text style={styles.body}>
+          So a race over {words(TIRES.hard.maxMinutes * 60)} needs at least one stop. A stop is a break of {PIT_BREAK_MINUTES[0]} to {PIT_BREAK_MINUTES[PIT_BREAK_MINUTES.length - 1]} min, and you can leave the app during it. When the break ends the pit exit opens and the race waits for you: more than {words(PIT_EXIT.slowStopAfterSeconds)} late is a slow stop (a warning), and {words(PIT_EXIT.crashAfterSeconds)} late ends the race with a DNF.
+        </Text>
       </View>
 
       <View style={styles.section}>
@@ -49,7 +75,7 @@ export default function HowRacesWorkScreen() {
           <ListRow title="Crash" subtitle="The race ends with a DNF. The laps you did before leaving still count." value={`${words(RULES.crashAfterSeconds)} +`} last />
         </View>
         <Text style={styles.body}>
-          {PENALTY.freeWarnings === 1 ? 'Your first warning in a race is free.' : `Your first ${PENALTY.freeWarnings} warnings in a race are free.`} Each one after that takes {PENALTY.stepPercent}% off the XP and credits for that race, up to {PENALTY.maxPercent}%.
+          {PENALTY.freeWarnings === 1 ? 'Your first warning in a race is free' : `Your first ${PENALTY.freeWarnings} warnings in a race are free`} (slow pit stops count too). Each one after that takes {PENALTY.stepPercent}% off the XP and credits for that race, up to {PENALTY.maxPercent}%.
         </Text>
       </View>
 
@@ -87,4 +113,8 @@ const useStyles = makeStyles((t) => ({
   section: { gap: t.spacing.sm },
   lead: { ...t.typography.body, color: t.colors.textSecondary },
   body: { ...t.typography.body, color: t.colors.textMuted },
+  tireRow: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.md, minHeight: t.size.row, borderBottomWidth: t.border.hairline, borderBottomColor: t.colors.border },
+  tireRowLast: { borderBottomWidth: 0 },
+  tireName: { ...t.typography.body, fontFamily: t.typography.heading.fontFamily, color: t.colors.text, flex: 1 },
+  tireValue: { ...t.typography.statSmall, color: t.colors.textSecondary },
 }));

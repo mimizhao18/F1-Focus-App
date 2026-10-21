@@ -1,5 +1,7 @@
 // The player's preferences (saved as settings.v1). Pure functions, so they can be tested (npm run check).
 
+import { DEFAULT_PIT_BREAK_MINUTES, PIT_BREAK_MINUTES } from './strategy';
+
 export type LengthMode = 'laps' | 'minutes';
 export type DistanceUnit = 'km' | 'mi';
 
@@ -23,6 +25,8 @@ export interface AppSettings {
   distanceUnit: DistanceUnit;
   /** Vibrate on race events (start lights, laps, warnings, the finish). */
   haptics: boolean;
+  /** How long each pit stop break is, in minutes (2 to 5). The Strategy screen starts on your last choice. */
+  pitBreakMinutes: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -34,6 +38,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   startLights: true,
   distanceUnit: 'km',
   haptics: true,
+  pitBreakMinutes: DEFAULT_PIT_BREAK_MINUTES,
 };
 
 export const DRIVER_NAME_MAX = 24;
@@ -84,5 +89,6 @@ export function normalizeSettings(raw: unknown, knownTrackIds: readonly string[]
     startLights: bool(s.startLights, DEFAULT_SETTINGS.startLights),
     distanceUnit: s.distanceUnit === 'km' || s.distanceUnit === 'mi' ? s.distanceUnit : DEFAULT_SETTINGS.distanceUnit,
     haptics: bool(s.haptics, DEFAULT_SETTINGS.haptics),
+    pitBreakMinutes: (PIT_BREAK_MINUTES as readonly unknown[]).includes(s.pitBreakMinutes) ? (s.pitBreakMinutes as number) : DEFAULT_SETTINGS.pitBreakMinutes,
   };
 }

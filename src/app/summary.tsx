@@ -5,19 +5,25 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { glowHexFor } from '../components/car3d/glow';
 import { DriverTag } from '../components/DriverTag';
+import { TireStrategyBar } from '../components/TireStrategyBar';
 import { Flag } from '../components/Flag';
-import { AmbientGlow, BracketFrame, Button, CreditAmount, SegmentedProgress, StartButton, StatBlock } from '../components/ui';
+import { AmbientGlow, BracketFrame, Button, CreditAmount, SectionLabel, SegmentedProgress, StartButton, StatBlock } from '../components/ui';
 import { getLivery } from '../data/liveries';
 import { TRACKS } from '../data/tracks';
 import { makeStyles, useTheme } from '../design/styles';
+import { formatClock } from '../logic/lapProgress';
 import { levelForXp, levelProgress } from '../logic/rewards';
 import { formatDurationWords } from '../logic/sessionOptions';
 import { formatDistance } from '../logic/settings';
+import { PIT_EXIT, stopperName } from '../logic/strategy';
 import { dayKey, displayedStreak } from '../logic/streak';
 import type { PlayerProfile, Session } from '../models/types';
 import { getProfile } from '../storage/profile';
 import { getSessions } from '../storage/sessions';
 import { useSettings } from '../ui/useSettings';
+
+/** The warnings that cut the rewards: track limits warnings, yellow flags and slow pit stops. */
+const warningTotal = (s: Session) => (s.trackLimits ?? 0) + (s.yellowFlags ?? 0) + (s.slowStops ?? 0);
 
 /** "Away 42 s · 1 track limits warning · 1 yellow flag", leaving out the counts that are zero. */
 function awayLine(session: Session): string {
@@ -104,10 +110,31 @@ export default function SummaryScreen() {
           </View>
         </View>
 
+        {session.strategy && (
+          <View style={styles.strategy}>
+            <SectionLabel trailing={stopperName(session.strategy.stints.length - 1)}>Strategy</SectionLabel>
+            <TireStrategyBar stints={session.strategy.stints} labels completedLaps={session.completedLaps} />
+            {session.pitStops?.map((stop, i) => {
+              const late = stop.seconds - (session.strategy?.pitBreakSeconds ?? 0) >= PIT_EXIT.slowStopAfterSeconds;
+              return (
+                <View key={i} style={styles.stopRow}>
+                  <Text style={styles.label}>
+                    Stop {i + 1} · Lap {stop.lap}
+                  </Text>
+                  <Text style={[styles.value, late && styles.slow]}>
+                    {formatClock(stop.seconds)}
+                    {late ? ' · slow' : ''}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         {session.awaySeconds ? <Text style={styles.away}>{awayLine(session)}</Text> : null}
         {session.rewardPenaltyPercent ? (
           <Text style={styles.penalty}>
-            Rewards reduced by {session.rewardPenaltyPercent}% for {(session.trackLimits ?? 0) + (session.yellowFlags ?? 0)} warnings
+            Rewards reduced by {session.rewardPenaltyPercent}% for {warningTotal(session)} warnings
           </Text>
         ) : null}
 
@@ -157,6 +184,9 @@ const useStyles = makeStyles((t) => ({
   cell: { flex: 1, alignItems: 'center', paddingHorizontal: t.spacing.sm },
   away: { ...t.typography.caption, color: t.colors.textMuted },
   penalty: { ...t.typography.caption, color: t.colors.flag },
+  strategy: { gap: t.spacing.sm },
+  stopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  slow: { color: t.colors.flag },
   level: { gap: t.spacing.sm },
   levelRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   pair: { flexDirection: 'row', alignItems: 'baseline', gap: t.spacing.sm },
