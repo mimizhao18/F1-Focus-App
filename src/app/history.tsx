@@ -10,10 +10,12 @@ import { makeStyles, useTheme } from '../design/styles';
 import { recentDays } from '../logic/history';
 import type { DayActivity } from '../logic/history';
 import { formatDurationWords } from '../logic/sessionOptions';
+import { formatDistance } from '../logic/settings';
 import { dayKey, displayedStreak } from '../logic/streak';
 import type { PlayerProfile, Session } from '../models/types';
 import { DEFAULT_PROFILE, getProfile } from '../storage/profile';
 import { getSessions } from '../storage/sessions';
+import { useSettings } from '../ui/useSettings';
 
 const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const STRIP_DAYS = 7;
@@ -117,6 +119,8 @@ function SessionRow({ session, last }: { session: Session; last: boolean }) {
   const dateText = when.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   const timeText = when.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   const track = TRACKS[session.trackId];
+  const { distanceUnit } = useSettings();
+  const distance = formatDistance(session.distanceKm, distanceUnit, 1);
   return (
     <View style={[styles.row, last && styles.rowLast]}>
       <View style={styles.rowMain}>
@@ -128,7 +132,7 @@ function SessionRow({ session, last }: { session: Session; last: boolean }) {
           {dateText} · {timeText}
         </Text>
         <Text style={styles.muted}>
-          {session.completedLaps}/{session.plannedLaps} laps · {formatDurationWords(session.focusedSeconds)} · {session.distanceKm.toFixed(1)} km
+          {session.completedLaps}/{session.plannedLaps} laps · {formatDurationWords(session.focusedSeconds)} · {distance.value} {distance.unit}
         </Text>
       </View>
       <View style={styles.rowSide}>

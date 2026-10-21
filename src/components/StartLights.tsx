@@ -3,6 +3,7 @@ import { AccessibilityInfo, Animated, AppState, Platform, Text, View } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { makeStyles, useTheme } from '../design/styles';
+import { haptic } from '../ui/haptics';
 import { AmbientGlow, Button } from './ui';
 
 const COLUMNS = [0, 1, 2, 3, 4];
@@ -54,6 +55,7 @@ export function StartLights({ title, onLightsOut, onDone, onCancel }: { title: s
     Animated.timing(lit[i], { toValue: 1, duration, useNativeDriver }).start();
     Animated.timing(glow, { toValue: (i + 1) / COLUMNS.length, duration: duration * 3, useNativeDriver }).start();
     setLitCount(i + 1);
+    haptic('light-on');
   });
 
   const lightsOut = useEffectEvent(() => {
@@ -62,6 +64,7 @@ export function StartLights({ title, onLightsOut, onDone, onCancel }: { title: s
     glow.setValue(0);
     setLitCount(0);
     setOut(true);
+    haptic('lights-out');
     onLightsOut();
     AccessibilityInfo.announceForAccessibility('Lights out. Race started.');
   });

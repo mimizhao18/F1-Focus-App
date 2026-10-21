@@ -18,7 +18,9 @@ import { buildSession } from '../logic/rewards';
 import type { CarSettings, Track } from '../models/types';
 import { getProfile } from '../storage/profile';
 import { recordSession } from '../storage/sessions';
+import { getSettingsSnapshot } from '../storage/settings';
 import { showAlert } from '../ui/alert';
+import { haptic } from '../ui/haptics';
 
 /** Marks a crash that left no race to save (it happened before the first minute of focus). */
 const NOTHING_SAVED = 'none';
@@ -59,7 +61,27 @@ function Race({ track, laps, speed }: { track: Track; laps: number; speed: numbe
   const trackHeight = Math.max(100, windowHeight - (compact ? t.size.raceReservedCompact : t.size.raceReserved));
   const [car, setCar] = useState<CarSettings | undefined>(undefined);
   // The start lights cover the race until they have gone out and faded; the clock starts at lights out, not before.
-  const [lightsShown, setLightsShown] = useState(true);
+  // With the lights turned off in Settings the race starts as soon as this screen opens.
+  const [startsAtOnce] = useState(() => !getSettingsSnapshot().startLights);
+  const [lightsShown, setLightsShown] = useState(!startsAtOnce);
+  const lapsBuzzed = useRef(0);
+
+  useEffect(() => {
+    if (!startsAtOnce) return;
+    haptic('lights-out');
+    start();
+  }, [startsAtOnce, start]);
+
+  // a buzz for each lap completed (the last one gets the finish buzz instead)
+  useEffect(() => {
+    if (p.completedLaps <= lapsBuzzed.current) return;
+    lapsBuzzed.current = p.completedLaps;
+    if (p.completedLaps < laps) haptic('lap');
+  }, [p.completedLaps, laps]);
+
+  useEffect(() => {
+    if (warning) haptic(warning.kind === 'crash' ? 'crash' : 'warning');
+  }, [warning]);
 
   useEffect(() => {
     getProfile().then((profile) => setCar(profile.car));
@@ -75,6 +97,7 @@ function Race({ track, laps, speed }: { track: Track; laps: number; speed: numbe
   useEffect(() => {
     if ((status !== 'finished' && status !== 'ended') || saved.current) return;
     saved.current = true;
+    if (status === 'finished') haptic('finish');
     const session = buildSession({
       id: String(Date.now()),
       track,

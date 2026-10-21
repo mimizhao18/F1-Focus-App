@@ -77,7 +77,7 @@ export const theme = {
   },
   border: { hairline: 1, selected: 1.5 },
   /** Fixed sizes: every touch target is at least `touch`, buttons and rows are taller. */
-  size: { touch: 44, control: 48, row: 56, tabBar: 48, progress: 4, icon: 22, heroCompact: 176, hero: 260, dialog: 340, weekBar: 64, thumbWidth: 10, thumbHeight: 28, flag: 24, raceReserved: 400, raceReservedCompact: 330, iconCar: 180, cardCar: 76, cardCarWide: 170, gantry: 340, primary: 56, tick: 8, tickRadius: 3, chevron: 14, swipeStart: 16, swipe: 64, swipeSpeed: 0.5, line: 2 },
+  size: { touch: 44, control: 48, row: 56, tabBar: 48, progress: 4, icon: 22, heroCompact: 176, hero: 260, dialog: 340, weekBar: 64, thumbWidth: 10, thumbHeight: 28, flag: 24, raceReserved: 400, raceReservedCompact: 330, iconCar: 180, cardCar: 76, cardCarWide: 170, gantry: 340, primary: 56, tick: 8, tickRadius: 3, chevron: 14, swipeStart: 16, swipe: 64, swipeSpeed: 0.5, line: 2, field: 180, segmentWide: 168, segmentNarrow: 112 },
   opacity: { disabled: 0.4, dimmed: 0.5, unaffordable: 0.68, pressed: 0.85 },
   /** Text styles, ready to spread into a style object. Numbers (stats, timers, XP, credits) use the mono ones. */
   typography: {

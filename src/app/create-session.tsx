@@ -6,15 +6,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Slider } from '../components/Slider';
 import { TrackCarousel } from '../components/TrackCarousel';
 import { SectionLabel, SegmentedControl, StartButton } from '../components/ui';
-import { TRACK_LIST, isTrackUnlocked } from '../data/tracks';
+import { TRACK_LIST, isTrackId, isTrackUnlocked } from '../data/tracks';
 import { makeStyles } from '../design/styles';
 import { clampLaps, lapsFromMinutes, maxMinutes, minutesForLaps } from '../logic/raceLength';
 import { distanceKm, lapsToSeconds, levelForXp } from '../logic/rewards';
 import { DEFAULT_LAPS, formatDurationWords } from '../logic/sessionOptions';
+import { formatDistance } from '../logic/settings';
+import type { LengthMode as Mode } from '../logic/settings';
 import type { TrackId } from '../models/types';
 import { getProfile } from '../storage/profile';
+import { updateSettings } from '../storage/settings';
+import { useSettings } from '../ui/useSettings';
 
-type Mode = 'laps' | 'minutes';
 const MODES: readonly Mode[] = ['laps', 'minutes'];
 const SPEEDS = ['1', '10', '30', '60'] as const;
 
@@ -32,9 +35,15 @@ const useStyles = makeStyles((t) => ({
 
 export default function CreateSessionScreen() {
   const styles = useStyles();
-  const [trackId, setTrackId] = useState<TrackId>(TRACK_LIST[0].id);
-  const [mode, setMode] = useState<Mode>('laps');
-  const [requestedLaps, setRequestedLaps] = useState<number>(DEFAULT_LAPS);
+  const settings = useSettings();
+  // Opens on your last race if Settings says so (the settings are read before any screen shows, see _layout.tsx).
+  const [initial] = useState(() => {
+    const last = settings.rememberLastRace ? settings.lastRace : null;
+    return isTrackId(last?.trackId) ? { trackId: last.trackId, laps: last.laps } : { trackId: TRACK_LIST[0].id, laps: DEFAULT_LAPS };
+  });
+  const [trackId, setTrackId] = useState<TrackId>(initial.trackId);
+  const [mode, setMode] = useState<Mode>(settings.lengthMode);
+  const [requestedLaps, setRequestedLaps] = useState<number>(initial.laps);
   const [speed, setSpeed] = useState(1); // development only: speeds the race up for testing
   const [level, setLevel] = useState(1);
 
@@ -53,17 +62,19 @@ export default function CreateSessionScreen() {
   const locked = !isTrackUnlocked(track, level);
 
   const start = () => {
+    if (settings.rememberLastRace) void updateSettings({ lastRace: { trackId: track.id, laps } }).catch(() => {});
     router.push({
       pathname: '/session',
       params: { track: track.id, laps: String(laps), ...(__DEV__ && speed > 1 ? { speed: String(speed) } : {}) },
     });
   };
 
+  const distance = formatDistance(km, settings.distanceUnit, 1);
   const bigValue = mode === 'laps' ? `${laps} ${laps === 1 ? 'lap' : 'laps'}` : formatDurationWords(seconds);
   const subValue =
     mode === 'laps'
-      ? `${formatDurationWords(seconds)} · ${km.toFixed(1)} km`
-      : `${laps} ${laps === 1 ? 'lap' : 'laps'} · ${km.toFixed(1)} km`;
+      ? `${formatDurationWords(seconds)} · ${distance.value} ${distance.unit}`
+      : `${laps} ${laps === 1 ? 'lap' : 'laps'} · ${distance.value} ${distance.unit}`;
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>

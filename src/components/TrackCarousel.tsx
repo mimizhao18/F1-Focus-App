@@ -5,7 +5,9 @@ import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { isTrackUnlocked } from '../data/tracks';
 import { makeStyles, useTheme } from '../design/styles';
 import { formatClock } from '../logic/lapProgress';
+import { formatDistance } from '../logic/settings';
 import type { Track, TrackId } from '../models/types';
+import { useSettings } from '../ui/useSettings';
 import { Flag } from './Flag';
 import { TrackView } from './TrackView';
 import { BracketFrame } from './ui';
@@ -125,6 +127,7 @@ const TrackCard = memo(function TrackCard({ track, width, previewHeight, level }
   const styles = useStyles();
   const theme = useTheme();
   const locked = !isTrackUnlocked(track, level);
+  const { distanceUnit } = useSettings();
   return (
     <BracketFrame style={[styles.card, { width }]}>
       <View style={[styles.header, locked && styles.dimmed]}>
@@ -150,9 +153,9 @@ const TrackCard = memo(function TrackCard({ track, width, previewHeight, level }
       </View>
 
       <View style={[styles.stats, locked && styles.dimmed]}>
-        <StatBlock first label="Length" value={track.lapLengthKm.toFixed(2)} unit="km" />
+        <StatBlock first label="Length" {...formatDistance(track.lapLengthKm, distanceUnit, 2)} />
         <StatBlock label="Laps" value={String(track.raceLaps)} />
-        <StatBlock label="Distance" value={track.raceDistanceKm.toFixed(0)} unit="km" />
+        <StatBlock label="Distance" {...formatDistance(track.raceDistanceKm, distanceUnit, 0)} />
         <StatBlock label="Lap time" value={formatClock(track.lapTimeSeconds)} />
       </View>
     </BracketFrame>

@@ -2,7 +2,10 @@ import { Text, View } from 'react-native';
 
 import { getLivery } from '../../data/liveries';
 import { makeStyles } from '../../design/styles';
+import { formatDistance } from '../../logic/settings';
+import { useSettings } from '../../ui/useSettings';
 import { glowHexFor } from '../car3d/glow';
+import { DriverTag } from '../DriverTag';
 import { HeroCar } from '../HeroCar';
 import { AmbientGlow, BracketFrame, CreditAmount, SegmentedProgress, StartButton } from '../ui';
 import type { HomeData } from './useHomeData';
@@ -31,12 +34,14 @@ const useStyles = makeStyles((t) => ({
  */
 export function HomeView({ data, onStart }: { data: HomeData; onStart: () => void }) {
   const styles = useStyles();
+  const settings = useSettings();
   const { profile, stats, level, streak } = data;
   const livery = getLivery(profile.car.liveryId);
+  const distance = formatDistance(stats.distanceKm, settings.distanceUnit, 0);
   const figures = [
     { label: 'Streak', value: `${streak} ${streak === 1 ? 'day' : 'days'}` },
     { label: 'Races', value: String(stats.races) },
-    { label: 'Distance', value: `${stats.distanceKm.toFixed(0)} km` },
+    { label: 'Distance', value: `${distance.value} ${distance.unit}` },
   ];
 
   return (
@@ -44,6 +49,7 @@ export function HomeView({ data, onStart }: { data: HomeData; onStart: () => voi
       <AmbientGlow color={glowHexFor(livery.primary, livery.secondary)} />
       <View style={styles.content}>
         <View style={styles.top}>
+          <DriverTag />
           <View style={styles.row}>
             <View style={styles.pair} accessible accessibilityLabel={`Level ${level.level}`}>
               <Text style={styles.metaLabel}>Level</Text>

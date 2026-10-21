@@ -1,11 +1,12 @@
 import { DarkTheme, Stack, ThemeProvider, router, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 
 import { useAppFonts } from '../design/fonts';
 import { fonts, theme } from '../design/tokens';
+import { loadSettings } from '../storage/settings';
 import { colors } from '../theme';
 import { AlertHost } from '../ui/AlertHost';
 import { BackButton } from '../ui/BackButton';
@@ -25,14 +26,19 @@ const noItems = () => [];
 const topLevel = { headerBackVisible: false, headerLeft: () => null, unstable_headerLeftItems: noItems };
 const tabScreen = (title: string, extra: Record<string, unknown> = {}) => () => ({ title, ...extra, animation: tabAnimation(), animationTypeForReplace: 'push' as const });
 
-// keep the splash screen up until the fonts are ready
+// keep the splash screen up until the fonts and settings are ready
 void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const pathname = usePathname();
   const swipe = useTabSwipe();
   const [fontsLoaded, fontsError] = useAppFonts();
-  const ready = fontsLoaded || !!fontsError;
+  // read while the fonts load, so every screen opens with the saved settings (New Race starts on your last race)
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  useEffect(() => {
+    void loadSettings().then(() => setSettingsLoaded(true));
+  }, []);
+  const ready = (fontsLoaded || !!fontsError) && settingsLoaded;
 
   useEffect(() => {
     if (ready) void SplashScreen.hideAsync();
@@ -67,6 +73,7 @@ export default function RootLayout() {
             <Stack.Screen name="dev/design-system" options={{ title: 'Design system' }} />
             <Stack.Screen name="dev/car-views" options={{ title: 'Car views' }} />
             <Stack.Screen name="compare" options={{ title: 'Compare generations' }} />
+            <Stack.Screen name="how-races-work" options={{ title: 'How races work' }} />
             {/* Swipe-back is off here because dragging the race-length slider to the right looks like a back swipe. */}
             <Stack.Screen name="create-session" options={{ title: 'New Race', gestureEnabled: false }} />
             <Stack.Screen name="summary" options={{ title: 'Race Summary', headerBackVisible: false, headerLeft: () => null, unstable_headerLeftItems: noItems, gestureEnabled: false }} />

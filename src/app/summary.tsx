@@ -4,6 +4,7 @@ import { ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { glowHexFor } from '../components/car3d/glow';
+import { DriverTag } from '../components/DriverTag';
 import { Flag } from '../components/Flag';
 import { AmbientGlow, BracketFrame, Button, CreditAmount, SegmentedProgress, StartButton, StatBlock } from '../components/ui';
 import { getLivery } from '../data/liveries';
@@ -11,10 +12,12 @@ import { TRACKS } from '../data/tracks';
 import { makeStyles, useTheme } from '../design/styles';
 import { levelForXp, levelProgress } from '../logic/rewards';
 import { formatDurationWords } from '../logic/sessionOptions';
+import { formatDistance } from '../logic/settings';
 import { dayKey, displayedStreak } from '../logic/streak';
 import type { PlayerProfile, Session } from '../models/types';
 import { getProfile } from '../storage/profile';
 import { getSessions } from '../storage/sessions';
+import { useSettings } from '../ui/useSettings';
 
 /** "Away 42 s · 1 track limits warning · 1 yellow flag", leaving out the counts that are zero. */
 function awayLine(session: Session): string {
@@ -27,6 +30,7 @@ function awayLine(session: Session): string {
 export default function SummaryScreen() {
   const styles = useStyles();
   const t = useTheme();
+  const settings = useSettings();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
@@ -76,6 +80,7 @@ export default function SummaryScreen() {
             </View>
           )}
           <Text style={styles.title}>{session.finished ? 'Chequered flag' : session.crashed ? 'DNF · Crashed' : 'Race ended early'}</Text>
+          <DriverTag />
         </View>
 
         <BracketFrame style={styles.rewards}>
@@ -95,7 +100,7 @@ export default function SummaryScreen() {
             <StatBlock label="Focused" value={formatDurationWords(session.focusedSeconds)} size="small" align="center" />
           </View>
           <View style={[styles.cell, styles.divided]}>
-            <StatBlock label="Distance" value={session.distanceKm.toFixed(1)} unit="km" size="small" align="center" />
+            <StatBlock label="Distance" {...formatDistance(session.distanceKm, settings.distanceUnit, 1)} size="small" align="center" />
           </View>
         </View>
 

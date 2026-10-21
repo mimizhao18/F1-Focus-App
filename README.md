@@ -67,8 +67,9 @@ Run the typecheck and lint before calling any change done (required by `AGENTS.m
 Everything is stored **on the phone only**, using AsyncStorage (no accounts, no server):
 - `profile.v1`: total XP, credits, streak, owned liveries, and the car (livery id and race number).
 - `sessions.v1`: the list of finished races.
+- `settings.v1`: the player's preferences (`src/logic/settings.ts`): driver name and code, remember last race (and the last race itself), laps or minutes, start lights on/off, km or miles, haptics on/off. Read once at launch (the splash screen waits for it) into one shared copy (`src/storage/settings.ts`); screens read it with `useSettings()` and change it with `updateSettings()`, so a change shows everywhere at once. Every bad or missing field falls back to its default on its own.
 
-Older saved profiles are upgraded automatically when fields change (`src/logic/profileMigration.ts`); for example, saves from the paint-color days keep their XP, credits and streak and get the default livery. **Settings > Reset all data** wipes both.
+Older saved profiles are upgraded automatically when fields change (`src/logic/profileMigration.ts`); for example, saves from the paint-color days keep their XP, credits and streak and get the default livery. **Settings > Reset all data** wipes all three.
 
 ## Screens
 
@@ -82,7 +83,8 @@ Older saved profiles are upgraded automatically when fields change (`src/logic/p
 | Garage | `src/app/garage.tsx` | Your liveries: 3D preview, race icon, collection progress, era filters, equip, change race number |
 | Store | `src/app/store.tsx` | Liveries you do not own: filters, sorting, a card grid |
 | Livery | `src/app/livery.tsx` | One livery in full (3D car, race icon) with its Buy or Equip button |
-| Settings | `src/app/settings.tsx` | Reset all data. In development builds also **Load demo data**: replaces everything with a week of example races (191 XP, 141 credits, a 5-day streak, the Cobalt livery owned) so the app looks lived-in for demos; one 15-minute race then triggers a level-up |
+| How races work | `src/app/how-races-work.tsx` | The rules in plain words: laps and lap times, pausing, leaving the app (track limits, yellow flag, crash, the rewards penalty), rewards, levels and streaks. Every number comes from the rule constants, so it stays right when a rule changes |
+| Settings | `src/app/settings.tsx` | **Driver**: name, three-letter code (taken from the name if left empty, shown on Home and the race summary) and race number. **Race**: remember last race, laps or minutes, start lights, km or miles. **Feedback**: haptics (`expo-haptics`, `src/ui/haptics.ts`: each start light, lights out, every lap, warnings, crash, finish; off on the web). Links to How races work and Compare generations, and Reset all data. In development builds also **Load demo data**: replaces everything with a week of example races (191 XP, 141 credits, a 5-day streak, the Cobalt livery owned) so the app looks lived-in for demos; one 15-minute race then triggers a level-up |
 
 Navigation uses **Expo Router** (file-based): every file in `src/app/` is a screen, and `_layout.tsx` defines the navigation stack.
 

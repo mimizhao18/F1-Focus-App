@@ -1,8 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Pressable, Text, View } from 'react-native';
+import type { ReactNode } from 'react';
+import { Platform, Pressable, Switch, Text, View } from 'react-native';
 
 import { makeStyles, useTheme } from '../../design/styles';
 import type { IconName } from './Button';
+
+// On the web the switch paints its knob in its own teal when on unless it is given this.
+const webThumb = (color: string) => (Platform.OS === 'web' ? { activeThumbColor: color } : {});
 
 const useStyles = makeStyles((t) => ({
   row: {
@@ -23,7 +27,10 @@ const useStyles = makeStyles((t) => ({
   value: { ...t.typography.statSmall, color: t.colors.textSecondary },
 }));
 
-/** One row of a list: optional icon, a title with an optional line under it, an optional value, and a chevron when it opens something. Rows are separated by hairlines; set `last` on the final one. */
+/**
+ * One row of a list: optional icon, a title with an optional line under it, an optional value, and a chevron when it opens something. Rows are separated by hairlines; set `last` on the final one.
+ * A row can instead end in an on/off switch (`toggle`, the whole row flips it) or in its own control (`accessory`, such as a text field or a small segmented control).
+ */
 export function ListRow({
   title,
   subtitle,
@@ -32,6 +39,8 @@ export function ListRow({
   onPress,
   destructive,
   chevron = true,
+  toggle,
+  accessory,
   last,
 }: {
   title: string;
@@ -42,6 +51,8 @@ export function ListRow({
   destructive?: boolean;
   /** Show the arrow at the end of a row that opens something (on by default for rows with onPress). */
   chevron?: boolean;
+  toggle?: { value: boolean; onChange: (value: boolean) => void };
+  accessory?: ReactNode;
   last?: boolean;
 }) {
   const styles = useStyles();
@@ -54,9 +65,31 @@ export function ListRow({
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
       {value ? <Text style={styles.value}>{value}</Text> : null}
-      {onPress && chevron ? <Ionicons name="chevron-forward" size={t.size.icon - 4} color={t.colors.textMuted} /> : null}
+      {accessory}
+      {toggle ? (
+        // only a picture of the switch: the row takes the taps and is the switch for screen readers
+        <View pointerEvents="none" importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+          <Switch value={toggle.value} trackColor={{ false: t.colors.border, true: t.colors.accent }} thumbColor={t.colors.text} {...webThumb(t.colors.text)} />
+        </View>
+      ) : null}
+      {onPress && chevron && !toggle ? <Ionicons name="chevron-forward" size={t.size.icon - 4} color={t.colors.textMuted} /> : null}
     </>
   );
+  if (toggle) {
+    return (
+      <Pressable
+        onPress={() => toggle.onChange(!toggle.value)}
+        accessibilityRole="switch"
+        // aria-checked rather than accessibilityState, which the web build ignores
+        aria-checked={toggle.value}
+        accessibilityLabel={title}
+        accessibilityHint={subtitle}
+        style={({ pressed }) => [styles.row, last && styles.last, pressed && styles.pressed]}
+      >
+        {content}
+      </Pressable>
+    );
+  }
   if (!onPress) return <View style={[styles.row, last && styles.last]}>{content}</View>;
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={title} style={({ pressed }) => [styles.row, last && styles.last, pressed && styles.pressed]}>

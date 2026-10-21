@@ -30,6 +30,7 @@ import { NO_AWAY, RULES, addAway, classifyAway, pauseSecondsLeft, penaltyPercent
 import { glowHexFor, hexToRgb255 } from '../src/components/car3d/glow.ts';
 import { TRACK_LIST, isTrackUnlocked } from '../src/data/tracks/index.ts';
 import { applySessionToStreak, daysBetween, displayedStreak } from '../src/logic/streak.ts';
+import { DEFAULT_SETTINGS, KM_PER_MILE, cleanDriverCode, driverCodeFor, formatDistance, normalizeSettings } from '../src/logic/settings.ts';
 
 const track = { id: 'silverstone', lapLengthKm: 5.891, lapTimeSeconds: 90 };
 
@@ -442,3 +443,40 @@ assert.ok(GEN2022.rearWing.beam.length > 0); // the 2022 car keeps its
 assert.ok(GEN2026.frontWing.elements.length <= 3 && GEN2026.frontWing.elements.length < GEN2022.frontWing.elements.length); // a simpler front wing (three elements in the 2026 photos, four in 2022)
 assert.ok(GEN2026.frontWing.elements.some((e) => e.active) && GEN2026.rearWing.elements.every((e) => e.active)); // active wings front and rear
 assert.ok(GEN2022.frontWing.elements.every((e) => !e.active) && GEN2022.rearWing.elements.every((e) => !e.active)); // the 2022 wings are fixed
+
+// settings (settings.v1): every bad or missing field falls back to its default on its own
+const trackIds = TRACK_LIST.map((t) => t.id);
+assert.deepEqual(normalizeSettings(null, trackIds), DEFAULT_SETTINGS);
+assert.deepEqual(normalizeSettings('junk', trackIds), DEFAULT_SETTINGS);
+assert.deepEqual(normalizeSettings({}, trackIds), DEFAULT_SETTINGS);
+const kept = normalizeSettings(
+  { driverName: 'Lewis Hamilton', driverCode: 'ham', rememberLastRace: false, lastRace: { trackId: 'monaco', laps: 12 }, lengthMode: 'minutes', startLights: false, distanceUnit: 'mi', haptics: false },
+  trackIds,
+);
+assert.deepEqual(kept, { driverName: 'Lewis Hamilton', driverCode: 'HAM', rememberLastRace: false, lastRace: { trackId: 'monaco', laps: 12 }, lengthMode: 'minutes', startLights: false, distanceUnit: 'mi', haptics: false });
+const mixed = normalizeSettings({ haptics: 'yes', distanceUnit: 'furlongs', lengthMode: 'hours', startLights: false, lastRace: { trackId: 'nurburgring', laps: 5 } }, trackIds);
+assert.equal(mixed.haptics, true);
+assert.equal(mixed.distanceUnit, 'km');
+assert.equal(mixed.lengthMode, 'laps');
+assert.equal(mixed.startLights, false); // the good field survives next to the bad ones
+assert.equal(mixed.lastRace, null); // an unknown track is forgotten
+assert.equal(normalizeSettings({ lastRace: { trackId: 'spa', laps: 2.5 } }, trackIds).lastRace, null); // laps are whole
+assert.equal(normalizeSettings({ lastRace: { trackId: 'spa', laps: 0 } }, trackIds).lastRace, null);
+assert.equal(normalizeSettings({ driverCode: 'HA' }, trackIds).driverCode, ''); // a half-typed code is dropped
+assert.equal(normalizeSettings({ driverName: 'x'.repeat(100) }, trackIds).driverName.length, 24);
+
+// driver codes
+assert.equal(cleanDriverCode('ver1stappen'), 'VER');
+assert.equal(cleanDriverCode('l-e c'), 'LEC');
+assert.equal(driverCodeFor({ driverName: 'Lewis Hamilton', driverCode: '' }), 'HAM');
+assert.equal(driverCodeFor({ driverName: 'Lewis Hamilton', driverCode: 'LH' }), 'HAM'); // a half-typed code falls back to the name
+assert.equal(driverCodeFor({ driverName: 'Lewis Hamilton', driverCode: 'BOB' }), 'BOB'); // a typed code wins
+assert.equal(driverCodeFor({ driverName: '  Charles  Leclerc ', driverCode: '' }), 'LEC');
+assert.equal(driverCodeFor({ driverName: 'Zhou', driverCode: '' }), 'ZHO');
+assert.equal(driverCodeFor({ driverName: 'Max Wu', driverCode: '' }), ''); // too short for a code
+assert.equal(driverCodeFor({ driverName: '', driverCode: '' }), '');
+
+// distances
+assert.deepEqual(formatDistance(5.891, 'km', 2), { value: '5.89', unit: 'km' });
+assert.deepEqual(formatDistance(5.891, 'mi', 2), { value: '3.66', unit: 'mi' });
+assert.deepEqual(formatDistance(KM_PER_MILE * 10, 'mi', 0), { value: '10', unit: 'mi' });
