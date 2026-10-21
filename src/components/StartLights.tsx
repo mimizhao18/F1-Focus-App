@@ -9,9 +9,8 @@ const COLUMNS = [0, 1, 2, 3, 4];
 /** A moment to settle before the first light, then one column a second, as at a real F1 start. */
 const FIRST_LIGHT_MS = 1000;
 const LIGHT_INTERVAL_MS = 1000;
-/** After the fifth light the starter holds for a random 0.2 to 3 s before the lights go out. */
-const HOLD_MIN_MS = 200;
-const HOLD_MAX_MS = 3000;
+/** After the fifth light the lights hold for a second, then go out. */
+const HOLD_MS = 1000;
 const LIGHT_ON_MS = 90;
 /** How long "Lights out" stays up before the gantry fades away and shows the race, already running underneath. */
 const CAPTION_MS = 1000;
@@ -20,7 +19,7 @@ const FADE_MS = 400;
 const useNativeDriver = Platform.OS !== 'web';
 
 /**
- * The start of a race: five columns of red lights come on one by one, a second apart, hold for a random moment and then all
+ * The start of a race: five columns of red lights come on one by one, a second apart, hold for a second and then all
  * go out together. `onLightsOut` fires at that instant (start the race clock there); `onDone` fires once the gantry has faded
  * away. Leaving the app before lights out starts the sequence again from the first light when you come back.
  */
@@ -73,8 +72,7 @@ export function StartLights({ title, onLightsOut, onDone, onCancel }: { title: s
     lit.forEach((v) => v.setValue(0));
     glow.setValue(0);
     const timers = COLUMNS.map((i) => setTimeout(() => lightColumn(i), FIRST_LIGHT_MS + i * LIGHT_INTERVAL_MS));
-    const hold = HOLD_MIN_MS + Math.random() * (HOLD_MAX_MS - HOLD_MIN_MS);
-    timers.push(setTimeout(lightsOut, FIRST_LIGHT_MS + (COLUMNS.length - 1) * LIGHT_INTERVAL_MS + hold));
+    timers.push(setTimeout(lightsOut, FIRST_LIGHT_MS + (COLUMNS.length - 1) * LIGHT_INTERVAL_MS + HOLD_MS));
     return () => timers.forEach(clearTimeout);
     // `out` is left out on purpose: lights out must not restart or cancel the sequence that caused it
     // eslint-disable-next-line react-hooks/exhaustive-deps
