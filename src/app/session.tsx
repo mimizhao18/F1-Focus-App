@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { glowHexFor } from '../components/car3d/glow';
 import { TrackView } from '../components/TrackView';
 import { Flag } from '../components/Flag';
+import { StartLights } from '../components/StartLights';
 import { AmbientGlow, Button, RaceBanner, SegmentedProgress } from '../components/ui';
 import { getLivery } from '../data/liveries';
 import { TRACKS, isTrackId } from '../data/tracks';
@@ -57,14 +58,12 @@ function Race({ track, laps, speed }: { track: Track; laps: number; speed: numbe
   // The track takes whatever height is left after the text and buttons (never less than 100), so nothing is pushed off screen.
   const trackHeight = Math.max(100, windowHeight - (compact ? t.size.raceReservedCompact : t.size.raceReserved));
   const [car, setCar] = useState<CarSettings | undefined>(undefined);
+  // The start lights cover the race until they have gone out and faded; the clock starts at lights out, not before.
+  const [lightsShown, setLightsShown] = useState(true);
 
   useEffect(() => {
     getProfile().then((profile) => setCar(profile.car));
   }, []);
-
-  useEffect(() => {
-    start();
-  }, [start]);
 
   // No leaving mid-race with the Android back button; pause and end the race instead.
   useEffect(() => {
@@ -112,6 +111,9 @@ function Race({ track, laps, speed }: { track: Track; laps: number; speed: numbe
     const timer = setTimeout(dismissWarning, WARNING_SHOWN_MS);
     return () => clearTimeout(timer);
   }, [warning, dismissWarning]);
+
+  // Cancelling during the start lights leaves before anything has started, so there is nothing to save.
+  const cancelStart = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
   const confirmEnd = () => {
     showAlert('End race early?', 'You keep the laps and focus time you have done so far.', [
@@ -204,6 +206,7 @@ function Race({ track, laps, speed }: { track: Track; laps: number; speed: numbe
           {paused && <Button label="End race" variant="ghost" onPress={confirmEnd} />}
         </View>
       </View>
+      {lightsShown && <StartLights title={`${track.name} · Race start`} onLightsOut={start} onDone={() => setLightsShown(false)} onCancel={cancelStart} />}
     </SafeAreaView>
   );
 }
