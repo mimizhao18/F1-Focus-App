@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -50,6 +51,7 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
   const settings = useSettings();
   const options = useMemo(() => strategyOptions(track, laps), [track, laps]);
   const [choice, setChoice] = useState<Choice>('recommended');
+  const custom = choice === 'custom';
   // the custom strategy starts as a copy of the recommended one
   const [compounds, setCompounds] = useState<Compound[]>(() => options[0]?.strategy.stints.map((s) => s.compound) ?? ['medium']);
   const [breakMinutes, setBreakMinutes] = useState(settings.pitBreakMinutes);
@@ -61,7 +63,7 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
   }, []);
 
   const customStints = useMemo(() => splitLaps(track, laps, compounds), [track, laps, compounds]);
-  const chosen: Stint[] | null = choice === 'custom' ? customStints : (options.find((o) => o.kind === choice)?.strategy.stints ?? null);
+  const chosen: Stint[] | null = custom ? customStints : (options.find((o) => o.kind === choice)?.strategy.stints ?? null);
   const stops = chosen ? chosen.length - 1 : 0;
 
   const racingSeconds = laps * track.lapTimeSeconds;
@@ -101,29 +103,42 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
 
         <SectionLabel>Strategy</SectionLabel>
         <View style={styles.options}>
-          {options.map((option, i) => (
-            <Appear key={option.kind} delay={i * 120}>
-              <OptionCard
-                title={TITLES[option.kind]}
-                subtitle={stopperName(stopCount(option.strategy))}
-                stints={option.strategy.stints}
-                lapSeconds={track.lapTimeSeconds}
-                highlight={option.kind === 'recommended'}
-                selected={choice === option.kind}
-                onPress={() => setChoice(option.kind)}
-              />
-            </Appear>
-          ))}
-          <Appear delay={options.length * 120}>
-            <Pressable onPress={() => setChoice('custom')} accessibilityRole="radio" accessibilityState={{ selected: choice === 'custom' }} accessibilityLabel="Build your own strategy">
-              <BracketFrame style={[styles.card, choice === 'custom' && styles.cardSelected]}>
-                {choice === 'custom' && <View style={styles.rail} />}
+          {/* while you build your own, the suggested strategies step aside and the builder moves up */}
+          {!custom &&
+            options.map((option, i) => (
+              <Appear key={option.kind} delay={i * 120}>
+                <OptionCard
+                  title={TITLES[option.kind]}
+                  subtitle={stopperName(stopCount(option.strategy))}
+                  stints={option.strategy.stints}
+                  lapSeconds={track.lapTimeSeconds}
+                  highlight={option.kind === 'recommended'}
+                  selected={choice === option.kind}
+                  onPress={() => setChoice(option.kind)}
+                />
+              </Appear>
+            ))}
+          <Appear delay={custom ? 0 : options.length * 120}>
+            <Pressable
+              onPress={() => setChoice(custom ? 'recommended' : 'custom')}
+              accessibilityRole="button"
+              accessibilityLabel={custom ? 'Back to the suggested strategies' : 'Build your own strategy'}
+            >
+              <BracketFrame style={[styles.card, custom && styles.cardSelected]}>
+                {custom && <View style={styles.rail} />}
                 <View style={styles.cardFoot}>
-                  <View style={styles.tireRow}>
-                    {COMPOUNDS.map((c) => (
-                      <TireIcon key={c} compound={c} />
-                    ))}
-                  </View>
+                  {custom ? (
+                    <View style={styles.back}>
+                      <Ionicons name="chevron-back" size={t.size.chevron} color={t.colors.textSecondary} />
+                      <Text style={styles.backText}>Suggested</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.tireRow}>
+                      {COMPOUNDS.map((c) => (
+                        <TireIcon key={c} compound={c} />
+                      ))}
+                    </View>
+                  )}
                   <View style={styles.cardTitles}>
                     <Text style={styles.cardTitle}>Build your own</Text>
                     <Text style={styles.cardSubtitle}>Your tires, your stops</Text>
@@ -134,7 +149,7 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
           </Appear>
         </View>
 
-        {choice === 'custom' && (
+        {custom && (
           <Builder track={track} laps={laps} compounds={compounds} stints={customStints} onStops={setStops} onCompound={setCompound} />
         )}
 
@@ -142,7 +157,6 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
           <View style={styles.section}>
             <SectionLabel>Pit stop length</SectionLabel>
             <SegmentedControl options={BREAK_OPTIONS} value={String(breakMinutes) as BreakOption} onChange={(m) => chooseBreak(Number(m))} labelFor={(m) => `${m} min`} />
-            <Text style={styles.muted}>Your break at each stop. When it ends, rejoin within a minute to avoid a slow stop; 3 minutes late is a DNF.</Text>
           </View>
         )}
 
@@ -319,6 +333,8 @@ const useStyles = makeStyles((t) => ({
   cardTitleHighlight: { color: t.colors.accentOnDark },
   cardSubtitle: { ...t.typography.microLabel, color: t.colors.textMuted },
   tireRow: { flexDirection: 'row', gap: t.spacing.xs },
+  back: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.xxs, minHeight: t.size.tire },
+  backText: { ...t.typography.metaLabel, color: t.colors.textSecondary },
   section: { gap: t.spacing.sm },
   muted: { ...t.typography.caption, color: t.colors.textMuted },
   problem: { ...t.typography.caption, color: t.colors.flag },
