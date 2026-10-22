@@ -30,13 +30,14 @@ const useStyles = makeStyles((t) => ({
   label: { ...t.typography.microLabel, color: t.colors.textMuted },
   labelActive: { color: t.colors.accentOnDark },
   homeShape: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  homeLabel: { ...t.typography.tabHome, color: t.colors.accentOnDark },
-  homeLabelActive: { color: t.colors.accentText },
+  homeLabel: { ...t.typography.tabHome, color: t.colors.textMuted },
+  homeLabelActive: { color: t.colors.background },
 }));
 
 /**
- * The Race (Home) tab's backdrop: a trapezoid, wider at the bottom, with a thin red line outside each slanted side (the same
- * double outline as the Start Race button). The shape inside is dark red when idle and solid red on Home.
+ * The Race (Home) tab's backdrop: a trapezoid, wider at the bottom. White rather than red, so on Home the Start Race
+ * button stays the one red thing to press: on Home it is white with a thin line outside each slanted side (the same
+ * double outline as the Start Race button); elsewhere it is a quiet grey under the bar's lit top edge.
  */
 function HomeShape({ active }: { active: boolean }) {
   const styles = useStyles();
@@ -52,10 +53,17 @@ function HomeShape({ active }: { active: boolean }) {
         <Svg width={width} height={height}>
           <Polygon
             points={`${slant + gap},0 ${width - slant - gap},0 ${width - gap},${height} ${gap},${height}`}
-            fill={active ? t.colors.accent : t.colors.accentTint}
+            fill={active ? t.colors.text : t.colors.surface}
           />
-          <Line x1={slant} y1={0} x2={o} y2={height} stroke={t.colors.accent} strokeOpacity={t.opacity.dimmed} strokeWidth={t.border.hairline} />
-          <Line x1={width - slant} y1={0} x2={width - o} y2={height} stroke={t.colors.accent} strokeOpacity={t.opacity.dimmed} strokeWidth={t.border.hairline} />
+          {active ? (
+            <>
+              <Line x1={slant} y1={0} x2={o} y2={height} stroke={t.colors.text} strokeOpacity={t.opacity.dimmed} strokeWidth={t.border.hairline} />
+              <Line x1={width - slant} y1={0} x2={width - o} y2={height} stroke={t.colors.text} strokeOpacity={t.opacity.dimmed} strokeWidth={t.border.hairline} />
+            </>
+          ) : (
+            // the bar's lit top edge carries on across the tab
+            <Line x1={slant + gap} y1={o} x2={width - slant - gap} y2={o} stroke={t.glass.tint} strokeOpacity={t.glass.edgeTop} strokeWidth={t.border.hairline} />
+          )}
         </Svg>
       )}
     </View>
