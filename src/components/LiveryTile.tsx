@@ -20,7 +20,8 @@ const useStyles = makeStyles((t) => ({
   ringEquipped: { borderColor: t.colors.accent },
   car: { height: t.size.cardCar + t.spacing.md, alignItems: 'center', justifyContent: 'center' },
   body: { paddingHorizontal: t.spacing.md, paddingBottom: t.spacing.md, gap: t.spacing.xxs },
-  name: { ...t.typography.body, fontFamily: t.typography.heading.fontFamily, color: t.colors.text },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm },
+  name: { ...t.typography.body, fontFamily: t.typography.heading.fontFamily, color: t.colors.text, flex: 1 },
   era: { ...t.typography.microLabel, color: t.colors.textMuted },
   foot: { flexDirection: 'row', alignItems: 'center', minHeight: t.size.icon, marginTop: t.spacing.sm },
   status: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs },
@@ -31,12 +32,12 @@ const useStyles = makeStyles((t) => ({
   short: { opacity: t.opacity.unaffordable },
 }));
 
-/** What a tile says at its foot: a price (Store), Owned (Store), Equipped (Garage), or nothing. */
+/** What a tile shows: a price beside the name (Store), or at its foot Owned (Store), Equipped (Garage) or nothing. */
 export type TileStatus = { kind: 'price'; canAfford: boolean } | { kind: 'owned' } | { kind: 'equipped' } | { kind: 'none' };
 
 /**
- * A livery as a glass card lit in its own colors: the car, its name and generation, and a status at the foot. The Store
- * and the Garage both use it. `selected` gives the card a brighter edge (the livery being previewed).
+ * A livery as a glass card lit in its own colors: the car, its name (with the price beside it in the Store) and generation,
+ * and a status at the foot. The Store and the Garage both use it. `selected` gives the card a brighter edge (the livery being previewed).
  */
 export function LiveryTile({ livery, number, status, selected = false, onPress }: { livery: Livery; number: number; status: TileStatus; selected?: boolean; onPress: () => void }) {
   const styles = useStyles();
@@ -61,29 +62,34 @@ export function LiveryTile({ livery, number, status, selected = false, onPress }
           <CarImage car={{ liveryId: livery.id, number }} size={t.size.cardCarWide} detail="simple" showNumber={false} />
         </View>
         <View style={styles.body}>
-          <Text style={styles.name} numberOfLines={1}>
-            {livery.name}
-          </Text>
-          <Text style={styles.era}>{era.name}</Text>
-          <View style={styles.foot}>
+          <View style={styles.nameRow}>
+            <Text style={styles.name} numberOfLines={1}>
+              {livery.name}
+            </Text>
             {status.kind === 'price' && (
               <View style={!status.canAfford && styles.short}>
-                <CreditAmount amount={livery.price} size="compact" />
-              </View>
-            )}
-            {status.kind === 'owned' && (
-              <View style={styles.status}>
-                <Ionicons name="checkmark" size={t.size.icon - 6} color={t.colors.positive} />
-                <Text style={styles.owned}>Owned</Text>
-              </View>
-            )}
-            {equipped && (
-              <View style={styles.status}>
-                <View style={styles.dot} />
-                <Text style={styles.equipped}>Equipped</Text>
+                <CreditAmount amount={livery.price} size="meta" />
               </View>
             )}
           </View>
+          <Text style={styles.era}>{era.name}</Text>
+          {/* a priced card has its price beside the name, so only the other kinds need a foot */}
+          {status.kind !== 'price' && (
+            <View style={styles.foot}>
+              {status.kind === 'owned' && (
+                <View style={styles.status}>
+                  <Ionicons name="checkmark" size={t.size.icon - 6} color={t.colors.positive} />
+                  <Text style={styles.owned}>Owned</Text>
+                </View>
+              )}
+              {equipped && (
+                <View style={styles.status}>
+                  <View style={styles.dot} />
+                  <Text style={styles.equipped}>Equipped</Text>
+                </View>
+              )}
+            </View>
+          )}
         </View>
         {(selected || equipped) && <View style={[styles.ring, equipped && styles.ringEquipped]} pointerEvents="none" />}
       </Glass>
