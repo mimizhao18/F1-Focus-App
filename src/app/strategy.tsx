@@ -107,6 +107,7 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
                 title={TITLES[option.kind]}
                 subtitle={stopperName(stopCount(option.strategy))}
                 stints={option.strategy.stints}
+                lapSeconds={track.lapTimeSeconds}
                 highlight={option.kind === 'recommended'}
                 selected={choice === option.kind}
                 onPress={() => setChoice(option.kind)}
@@ -161,7 +162,23 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
 }
 
 /** One strategy, drawn like a broadcast strategy graphic: the tire line with each stop's lap, and its name on the right. */
-function OptionCard({ title, subtitle, stints, highlight, selected, onPress }: { title: string; subtitle: string; stints: Stint[]; highlight: boolean; selected: boolean; onPress: () => void }) {
+function OptionCard({
+  title,
+  subtitle,
+  stints,
+  lapSeconds,
+  highlight,
+  selected,
+  onPress,
+}: {
+  title: string;
+  subtitle: string;
+  stints: Stint[];
+  lapSeconds: number;
+  highlight: boolean;
+  selected: boolean;
+  onPress: () => void;
+}) {
   const styles = useStyles();
   const stops = pitLaps({ stints });
   return (
@@ -169,13 +186,12 @@ function OptionCard({ title, subtitle, stints, highlight, selected, onPress }: {
       onPress={onPress}
       accessibilityRole="radio"
       accessibilityState={{ selected }}
-      accessibilityLabel={`${title}, ${subtitle}${stops.length ? `, pit after lap ${stops.join(' and ')}` : ''}, ${stints.map((s) => TIRES[s.compound].name).join(' then ')}`}
+      accessibilityLabel={`${title}, ${subtitle}${stops.length ? `, pit after lap ${stops.join(' and ')}` : ''}, ${stints.map((s) => `${TIRES[s.compound].name} for ${formatDurationWords(s.laps * lapSeconds)}`).join(' then ')}`}
     >
       <BracketFrame style={[styles.card, selected && styles.cardSelected]}>
         {selected && <View style={styles.rail} />}
-        <TireStrategyBar stints={stints} labels />
-        <View style={styles.cardFoot}>
-          <Text style={styles.stintText}>{stints.map((s) => `${TIRES[s.compound].letter}${s.laps}`).join('  ')}</Text>
+        <TireStrategyBar stints={stints} labels lapSeconds={lapSeconds} />
+        <View style={[styles.cardFoot, styles.cardFootEnd]}>
           <View style={styles.cardTitles}>
             <Text style={[styles.cardTitle, highlight && styles.cardTitleHighlight]}>{title}</Text>
             <Text style={styles.cardSubtitle}>{subtitle}</Text>
@@ -219,7 +235,7 @@ function Builder({
       <SectionLabel>Pit stops</SectionLabel>
       <SegmentedControl options={STOP_OPTIONS.slice(0, Math.min(MAX_STOPS, laps - 1) + 1)} value={String(compounds.length - 1) as (typeof STOP_OPTIONS)[number]} onChange={(s) => onStops(Number(s))} labelFor={(s) => (s === '0' ? 'None' : s)} />
 
-      {stints ? <TireStrategyBar stints={stints} labels /> : <Text style={styles.problem}>{problem}</Text>}
+      {stints ? <TireStrategyBar stints={stints} labels lapSeconds={track.lapTimeSeconds} /> : <Text style={styles.problem}>{problem}</Text>}
 
       <View>
         {compounds.map((compound, i) => {
@@ -297,11 +313,11 @@ const useStyles = makeStyles((t) => ({
   cardSelected: { backgroundColor: t.colors.raised },
   rail: { position: 'absolute', left: 0, top: 0, bottom: 0, width: t.size.line + 1, backgroundColor: t.colors.accent },
   cardFoot: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: t.spacing.md },
+  cardFootEnd: { justifyContent: 'flex-end' },
   cardTitles: { alignItems: 'flex-end', gap: t.spacing.xxs },
   cardTitle: { ...t.typography.metaLabel, fontFamily: t.typography.heading.fontFamily, color: t.colors.text },
   cardTitleHighlight: { color: t.colors.accentOnDark },
   cardSubtitle: { ...t.typography.microLabel, color: t.colors.textMuted },
-  stintText: { ...t.typography.metaValue, color: t.colors.textMuted },
   tireRow: { flexDirection: 'row', gap: t.spacing.xs },
   section: { gap: t.spacing.sm },
   muted: { ...t.typography.caption, color: t.colors.textMuted },
