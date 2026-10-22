@@ -1,18 +1,22 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import type { ReactNode } from 'react';
+import { Animated, Platform, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { glowHexFor } from '../components/car3d/glow';
+import { CreditIcon } from '../components/CreditIcon';
 import { DriverTag } from '../components/DriverTag';
-import { TireStrategyBar } from '../components/TireStrategyBar';
 import { Flag } from '../components/Flag';
-import { AmbientGlow, BracketFrame, Button, CreditAmount, SectionLabel, SegmentedProgress, StartButton, StatBlock } from '../components/ui';
+import { TireStrategyBar } from '../components/TireStrategyBar';
+import { AmbientGlow, BracketFrame, Button, SectionLabel, SegmentedProgress, StartButton, StatBlock } from '../components/ui';
+import { XpIcon } from '../components/XpIcon';
 import { getLivery } from '../data/liveries';
 import { TRACKS } from '../data/tracks';
 import { makeStyles, useTheme } from '../design/styles';
+import { useCountUp } from '../hooks/useCountUp';
 import { formatClock } from '../logic/lapProgress';
-import { levelForXp, levelProgress } from '../logic/rewards';
+import { creditsForSeconds, levelForXp, levelProgress, xpForSeconds } from '../logic/rewards';
 import { formatDurationWords } from '../logic/sessionOptions';
 import { formatDistance } from '../logic/settings';
 import { PIT_EXIT, stopperName } from '../logic/strategy';
@@ -20,7 +24,15 @@ import { dayKey, displayedStreak } from '../logic/streak';
 import type { PlayerProfile, Session } from '../models/types';
 import { getProfile } from '../storage/profile';
 import { getSessions } from '../storage/sessions';
+import { haptic } from '../ui/haptics';
+import { useReduceMotion } from '../ui/useReduceMotion';
 import { useSettings } from '../ui/useSettings';
+
+// The results reveal, like a game's post-race screen: the reward tiles pop in and count up, any warnings penalty
+// follows, then the XP bar fills (with a level-up flourish when it crosses a level). Milliseconds from opening the screen.
+const REVEAL = { xpTile: 150, creditsTile: 350, count: 900, breakdown: 1100, level: 1300, levelFill: 1200 } as const;
+// the native driver does not exist on web
+const useNativeDriver = Platform.OS !== 'web';
 
 /** The warnings that cut the rewards: track limits warnings, yellow flags and slow pit stops. */
 const warningTotal = (s: Session) => (s.trackLimits ?? 0) + (s.yellowFlags ?? 0) + (s.slowStops ?? 0);
@@ -35,8 +47,6 @@ function awayLine(session: Session): string {
 
 export default function SummaryScreen() {
   const styles = useStyles();
-  const t = useTheme();
-  const settings = useSettings();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
@@ -66,13 +76,33 @@ export default function SummaryScreen() {
       </View>
     );
   }
+  return <Results session={session} profile={profile} />;
+}
+
+function Results({ session, profile }: { session: Session; profile: PlayerProfile }) {
+  const styles = useStyles();
+  const t = useTheme();
+  const settings = useSettings();
+  const instant = useReduceMotion();
 
   const track = TRACKS[session.trackId];
-  const levelBefore = levelForXp(profile.totalXp - session.xpEarned);
-  const progress = levelProgress(profile.totalXp);
-  const leveledUp = progress.level > levelBefore;
   const streak = displayedStreak(profile, dayKey(new Date()));
   const livery = getLivery(profile.car.liveryId);
+  // what the warnings penalty took off a minute of focus each (shown only when there was one)
+  const baseXp = xpForSeconds(session.focusedSeconds);
+  const baseCredits = creditsForSeconds(session.focusedSeconds);
+  const penalty = session.rewardPenaltyPercent ?? 0;
+
+  // the XP bar moves from where it was before this race to where it is now
+  const xpBefore = profile.totalXp - session.xpEarned;
+  const xpShown = useCountUp(xpBefore, profile.totalXp, { delay: REVEAL.level, duration: REVEAL.levelFill, instant });
+  const level = levelProgress(Math.round(xpShown));
+  const levelBefore = levelForXp(xpBefore);
+  const leveledUp = level.level > levelBefore;
+
+  useEffect(() => {
+    if (leveledUp) haptic('level-up');
+  }, [leveledUp]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
@@ -89,14 +119,43 @@ export default function SummaryScreen() {
           <DriverTag />
         </View>
 
-        <BracketFrame style={styles.rewards}>
-          <View style={styles.reward}>
-            <StatBlock label="XP earned" value={`+${session.xpEarned}`} size="large" />
+        <View style={styles.rewardsBlock}>
+          <BracketFrame style={styles.rewards}>
+            <RewardTile icon={<XpIcon size={t.size.icon} />} amount={session.xpEarned} label="XP" delay={REVEAL.xpTile} instant={instant} />
+            <View style={styles.tileDivider} />
+            <RewardTile icon={<CreditIcon size={t.size.icon} />} amount={session.creditsEarned} label="Credits" delay={REVEAL.creditsTile} instant={instant} />
+          </BracketFrame>
+
+          {penalty > 0 && (
+            <Reveal delay={REVEAL.breakdown} instant={instant}>
+              <View style={styles.breakdown}>
+                <BreakdownRow label={`${warningTotal(session)} warnings · −${penalty}%`} xp={`−${baseXp - session.xpEarned}`} credits={`−${baseCredits - session.creditsEarned}`} warn />
+              </View>
+            </Reveal>
+          )}
+        </View>
+
+        <View style={styles.level}>
+          <View style={styles.levelRow}>
+            <View style={styles.pair} accessible accessibilityLabel={`Level ${level.level}${leveledUp ? ', level up' : ''}`}>
+              <Text style={styles.label}>Level</Text>
+              <Text style={styles.levelNumber}>{level.level}</Text>
+              {leveledUp && <LevelUpBadge instant={instant} />}
+            </View>
+            <Text style={styles.muted}>
+              {level.xpIntoLevel} / {level.xpForNextLevel} XP
+            </Text>
           </View>
-          <View style={[styles.reward, styles.divided]}>
-            <StatBlock label="Credits earned" value={`+${session.creditsEarned}`} size="large" />
+          <SegmentedProgress fraction={level.fraction} accessibilityLabel={`XP: ${level.xpIntoLevel} of ${level.xpForNextLevel} to level ${level.level + 1}`} />
+          <View style={styles.levelRow}>
+            <Text style={styles.muted}>
+              {level.xpForNextLevel - level.xpIntoLevel} XP to level {level.level + 1}
+            </Text>
+            <Text style={styles.muted}>
+              {streak} day{streak === 1 ? '' : 's'} streak
+            </Text>
           </View>
-        </BracketFrame>
+        </View>
 
         <View style={styles.strip}>
           <View style={styles.cell}>
@@ -132,31 +191,6 @@ export default function SummaryScreen() {
         )}
 
         {session.awaySeconds ? <Text style={styles.away}>{awayLine(session)}</Text> : null}
-        {session.rewardPenaltyPercent ? (
-          <Text style={styles.penalty}>
-            Rewards reduced by {session.rewardPenaltyPercent}% for {warningTotal(session)} warnings
-          </Text>
-        ) : null}
-
-        <View style={styles.level}>
-          <View style={styles.levelRow}>
-            <View style={styles.pair} accessible accessibilityLabel={`Level ${progress.level}${leveledUp ? ', level up' : ''}`}>
-              <Text style={styles.label}>Level</Text>
-              <Text style={styles.value}>{progress.level}</Text>
-              {leveledUp && <Text style={styles.levelUp}>Level up</Text>}
-            </View>
-            <CreditAmount amount={profile.credits} size="meta" />
-          </View>
-          <SegmentedProgress fraction={progress.fraction} accessibilityLabel={`XP: ${progress.xpIntoLevel} of ${progress.xpForNextLevel} to level ${progress.level + 1}`} />
-          <View style={styles.levelRow}>
-            <Text style={styles.muted}>
-              {progress.xpIntoLevel} / {progress.xpForNextLevel} XP
-            </Text>
-            <Text style={styles.muted}>
-              {streak} day{streak === 1 ? '' : 's'} streak
-            </Text>
-          </View>
-        </View>
       </ScrollView>
 
       <View style={styles.footer}>
@@ -165,6 +199,78 @@ export default function SummaryScreen() {
       </View>
     </SafeAreaView>
   );
+}
+
+/** One reward: its icon pops in, then the amount counts up from zero. */
+function RewardTile({ icon, amount, label, delay, instant }: { icon: ReactNode; amount: number; label: string; delay: number; instant: boolean }) {
+  const styles = useStyles();
+  const shown = useCountUp(0, amount, { delay: delay + 150, duration: REVEAL.count, instant });
+  return (
+    <View style={styles.tile} accessible accessibilityLabel={`${amount} ${label} earned`}>
+      <View style={styles.inline}>
+        <Reveal delay={delay} instant={instant} pop>
+          {icon}
+        </Reveal>
+        <Text style={styles.rewardValue}>+{Math.round(shown)}</Text>
+      </View>
+      <Text style={styles.rewardLabel}>{label} earned</Text>
+    </View>
+  );
+}
+
+/** A line of the reward breakdown: where some XP and credits came from (or went). */
+function BreakdownRow({ label, xp, credits, warn = false }: { label: string; xp: string; credits: string; warn?: boolean }) {
+  const styles = useStyles();
+  const t = useTheme();
+  return (
+    <View style={styles.breakdownRow} accessible accessibilityLabel={`${label}: ${xp} XP, ${credits} credits`}>
+      <Text style={[styles.breakdownLabel, warn && styles.warn]}>{label}</Text>
+      <View style={[styles.inline, styles.amountColumn]}>
+        <XpIcon size={t.size.tireSmall} />
+        <Text style={[styles.value, warn && styles.warn]}>{xp}</Text>
+      </View>
+      <View style={[styles.inline, styles.amountColumn]}>
+        <CreditIcon size={t.size.tireSmall} />
+        <Text style={[styles.value, warn && styles.warn]}>{credits}</Text>
+      </View>
+    </View>
+  );
+}
+
+/** "Level up": a red tag that pops in when the XP bar crosses into a new level. */
+function LevelUpBadge({ instant }: { instant: boolean }) {
+  const styles = useStyles();
+  return (
+    <Reveal delay={0} instant={instant} pop>
+      <View style={styles.levelUp}>
+        <Text style={styles.levelUpText}>Level up</Text>
+      </View>
+    </Reveal>
+  );
+}
+
+/** Fades its content in after `delay` ms; with `pop` it also grows in with a small overshoot, like a reward landing. */
+function Reveal({ delay, instant, pop = false, children }: { delay: number; instant: boolean; pop?: boolean; children: ReactNode }) {
+  const [progress] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    if (instant) {
+      progress.setValue(1);
+      return;
+    }
+    const animation = pop
+      ? Animated.spring(progress, { toValue: 1, delay, friction: 5, tension: 120, useNativeDriver })
+      : Animated.timing(progress, { toValue: 1, delay, duration: 300, useNativeDriver });
+    animation.start();
+    // a timer as well, so the content still shows when the screen is not drawing frames
+    const timer = setTimeout(() => progress.setValue(1), delay + 1000);
+    return () => {
+      animation.stop();
+      clearTimeout(timer);
+    };
+  }, [progress, delay, instant, pop]);
+  const opacity = progress.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 1, 1] });
+  const transform = pop ? [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }) }] : [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }];
+  return <Animated.View style={{ opacity, transform }}>{children}</Animated.View>;
 }
 
 const useStyles = makeStyles((t) => ({
@@ -177,19 +283,30 @@ const useStyles = makeStyles((t) => ({
   value: { ...t.typography.metaValue, color: t.colors.text },
   title: { ...t.typography.title, color: t.colors.text },
   muted: { ...t.typography.metaValue, color: t.colors.textMuted },
-  rewards: { flexDirection: 'row', paddingVertical: t.spacing.lg },
-  reward: { flex: 1, paddingHorizontal: t.spacing.md },
+  rewardsBlock: { gap: t.spacing.sm },
+  rewards: { flexDirection: 'row', paddingVertical: t.spacing.md },
+  tile: { flex: 1, alignItems: 'center', gap: t.spacing.xs },
+  tileDivider: { width: t.border.hairline, backgroundColor: t.glass.divider },
+  rewardValue: { ...t.typography.stat, color: t.colors.text },
+  rewardLabel: { ...t.typography.microLabel, color: t.colors.textMuted },
+  breakdown: { paddingHorizontal: t.spacing.md },
+  breakdownRow: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.md, paddingVertical: t.spacing.sm },
+  breakdownLabel: { ...t.typography.caption, color: t.colors.textSecondary, flex: 1 },
+  amountColumn: { width: t.size.control + t.spacing.md, justifyContent: 'flex-end' },
+  inline: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs },
+  warn: { color: t.colors.flag },
   divided: { borderLeftWidth: t.border.hairline, borderLeftColor: t.glass.divider },
   strip: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center', paddingHorizontal: t.spacing.sm },
   away: { ...t.typography.caption, color: t.colors.textMuted },
-  penalty: { ...t.typography.caption, color: t.colors.flag },
   strategy: { gap: t.spacing.sm },
   stopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   slow: { color: t.colors.flag },
   level: { gap: t.spacing.sm },
-  levelRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
-  pair: { flexDirection: 'row', alignItems: 'baseline', gap: t.spacing.sm },
-  levelUp: { ...t.typography.metaLabel, color: t.colors.accentOnDark },
+  levelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  pair: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm },
+  levelNumber: { ...t.typography.stat, color: t.colors.text },
+  levelUp: { paddingHorizontal: t.spacing.sm, paddingVertical: t.spacing.xxs, borderRadius: t.radius.control, backgroundColor: t.colors.accent, boxShadow: `0 0 ${t.spacing.md}px ${t.colors.accent}` },
+  levelUpText: { ...t.typography.microLabel, color: t.colors.accentText },
   footer: { padding: t.spacing.screen, gap: t.spacing.sm, borderTopWidth: t.border.hairline, borderTopColor: t.colors.border },
 }));
