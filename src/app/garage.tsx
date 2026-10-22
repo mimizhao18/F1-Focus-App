@@ -4,7 +4,7 @@ import { ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { glowHexFor } from '../components/car3d/glow';
-import { LiveryCard } from '../components/LiveryCard';
+import { LiveryTile } from '../components/LiveryTile';
 import { LiveryPreview } from '../components/LiveryPreview';
 import { AmbientGlow, Button, Chip, SectionLabel, SegmentedProgress } from '../components/ui';
 import { ERAS } from '../data/eras';
@@ -22,7 +22,7 @@ const useStyles = makeStyles((t) => ({
   content: { padding: t.spacing.screen, gap: t.spacing.md, paddingBottom: t.spacing.xl },
   collection: { gap: t.spacing.sm },
   chips: { gap: t.spacing.sm, paddingRight: t.spacing.md },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: t.spacing.sm },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: t.spacing.md },
   empty: { alignItems: 'center', gap: t.spacing.md, paddingVertical: t.spacing.lg },
   emptyText: { ...t.typography.body, color: t.colors.textMuted, textAlign: 'center' },
 }));
@@ -82,15 +82,12 @@ export default function GarageScreen() {
         ) : (
           <View style={styles.grid}>
             {shown.map((livery) => (
-              <LiveryCard
+              <LiveryTile
                 key={livery.id}
                 livery={livery}
                 number={profile.car.number}
-                owned
-                equipped={livery.id === profile.car.liveryId}
-                previewing={livery.id === previewed.id}
-                canAfford
-                showEra
+                status={livery.id === profile.car.liveryId ? { kind: 'equipped' } : { kind: 'none' }}
+                selected={livery.id === previewed.id}
                 onPress={() => setPreviewId(livery.id)}
               />
             ))}

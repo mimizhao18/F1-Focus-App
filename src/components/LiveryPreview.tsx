@@ -5,7 +5,7 @@ import type { Livery } from '../data/liveries';
 import { makeStyles, useTheme } from '../design/styles';
 import { CarImage } from './CarIcon';
 import { HeroCar } from './HeroCar';
-import { BracketFrame, Button, CreditAmount } from './ui';
+import { Button, CreditAmount, Glass } from './ui';
 
 const useStyles = makeStyles((t) => ({
   stack: { gap: t.spacing.md },
@@ -81,10 +81,10 @@ export function LiveryPreview({
           <Button label="Buy" accessibilityLabel={`Buy for ${livery.price} credits`} onPress={onBuy} />
         ))}
 
-      <BracketFrame style={styles.iconFrame}>
+      <Glass style={styles.iconFrame}>
         <Text style={styles.iconLabel}>Race icon</Text>
         <CarImage car={car} size={t.size.iconCar} detail="full" showNumber />
-      </BracketFrame>
+      </Glass>
     </View>
   );
 }

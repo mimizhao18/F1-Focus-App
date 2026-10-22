@@ -1,70 +1,78 @@
 import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { LiveryCard } from '../components/LiveryCard';
-import { Button, CreditAmount, SectionLabel } from '../components/ui';
-import { ERAS } from '../data/eras';
+import { LiveryTile } from '../components/LiveryTile';
+import { CreditAmount, SectionLabel } from '../components/ui';
 import { LIVERIES } from '../data/liveries';
 import { makeStyles } from '../design/styles';
 import { ownsLivery } from '../logic/garage';
+import { formatTimeLeft, nextRefresh, weekKey } from '../logic/shop';
+import { getWeeklyOffers } from '../storage/shop';
 import { useGarage } from '../ui/useGarage';
 
 const useStyles = makeStyles((t) => ({
   container: { flex: 1 },
-  content: { padding: t.spacing.screen, gap: t.spacing.lg, paddingBottom: t.spacing.xl },
-  top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  count: { ...t.typography.metaLabel, color: t.colors.textMuted },
-  group: { gap: t.spacing.sm },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: t.spacing.sm },
-  empty: { alignItems: 'center', gap: t.spacing.md, paddingVertical: t.spacing.xl },
-  emptyText: { ...t.typography.body, color: t.colors.textMuted, textAlign: 'center' },
+  content: { padding: t.spacing.screen, gap: t.spacing.md, paddingBottom: t.spacing.xl },
+  top: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  heading: { gap: t.spacing.xs },
+  refresh: { ...t.typography.metaValue, color: t.colors.textMuted },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: t.spacing.md },
 }));
 
-/** The Store: every livery you do not own yet, by generation. Tap one to see it in full and buy it. */
+/**
+ * The Store: six liveries you do not own yet, picked at random from any generation, that change every Monday
+ * (logic/shop.ts). Tap one to see it in full and buy it. Owned ones only show when fewer than six are left to buy.
+ */
 export default function StoreScreen() {
   const styles = useStyles();
   const { profile } = useGarage();
+  const [offerIds, setOfferIds] = useState<string[] | null>(null);
+  // the clock for the countdown, moved on every half minute; a new week brings new offers
+  const [now, setNow] = useState(() => new Date());
+  const week = weekKey(now);
 
-  if (!profile) return <View style={styles.container} />;
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
-  const forSale = LIVERIES.filter((l) => !ownsLivery(profile, l));
-  const groups = ERAS.map((era) => ({ era, liveries: forSale.filter((l) => l.era === era.id) })).filter((g) => g.liveries.length > 0);
+  useEffect(() => {
+    if (!profile) return;
+    let cancelled = false;
+    getWeeklyOffers(profile, new Date()).then((offers) => !cancelled && setOfferIds(offers.liveryIds));
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, week]);
+
+  if (!profile || !offerIds) return <View style={styles.container} />;
+
+  const offers = offerIds.map((id) => LIVERIES.find((l) => l.id === id)).filter((l) => l !== undefined);
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.top}>
-          <Text style={styles.count}>{forSale.length === 0 ? 'Nothing left to buy' : `${forSale.length} liveries for sale`}</Text>
+          <View style={styles.heading}>
+            <SectionLabel>This week</SectionLabel>
+            <Text style={styles.refresh}>New liveries in {formatTimeLeft(now, nextRefresh(now))}</Text>
+          </View>
           <CreditAmount amount={profile.credits} size="compact" />
         </View>
 
-        {forSale.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>You own every livery so far. More are on the way.</Text>
-            <Button label="Back to the Garage" variant="secondary" onPress={() => router.replace('/garage')} />
-          </View>
-        ) : (
-          groups.map(({ era, liveries }) => (
-            <View key={era.id} style={styles.group}>
-              <SectionLabel trailing={era.years}>{era.name}</SectionLabel>
-              <View style={styles.grid}>
-                {liveries.map((livery) => (
-                  <LiveryCard
-                    key={livery.id}
-                    livery={livery}
-                    number={profile.car.number}
-                    owned={false}
-                    equipped={false}
-                    previewing={false}
-                    canAfford={livery.price <= profile.credits}
-                    onPress={() => router.push({ pathname: '/livery', params: { id: livery.id } })}
-                  />
-                ))}
-              </View>
-            </View>
-          ))
-        )}
+        <View style={styles.grid}>
+          {offers.map((livery) => (
+            <LiveryTile
+              key={livery.id}
+              livery={livery}
+              number={profile.car.number}
+              status={ownsLivery(profile, livery) ? { kind: 'owned' } : { kind: 'price', canAfford: livery.price <= profile.credits }}
+              onPress={() => router.push({ pathname: '/livery', params: { id: livery.id } })}
+            />
+          ))}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );

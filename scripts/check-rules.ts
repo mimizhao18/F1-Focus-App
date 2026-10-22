@@ -30,6 +30,7 @@ import { NO_AWAY, RULES, addAway, classifyAway, pauseSecondsLeft, penaltyPercent
 import { glowHexFor, hexToRgb255 } from '../src/components/car3d/glow.ts';
 import { TRACK_LIST, isTrackUnlocked } from '../src/data/tracks/index.ts';
 import { applySessionToStreak, daysBetween, displayedStreak } from '../src/logic/streak.ts';
+import { OFFER_COUNT, formatTimeLeft, nextRefresh, offersForWeek, pickOffers, weekKey } from '../src/logic/shop.ts';
 import { MAX_STOPS, PIT_EXIT, TIRES, bestStrategy, decodeStrategy, encodeStrategy, isValidStrategy, minStops, pitLaps, splitLaps, stintIndexAt, stintRanges, stopperName, strategyOptions, tireLaps } from '../src/logic/strategy.ts';
 import { DEFAULT_SETTINGS, KM_PER_MILE, cleanDriverCode, driverCodeFor, formatDistance, normalizeSettings } from '../src/logic/settings.ts';
 
@@ -567,5 +568,67 @@ assert.equal(pitted.slowStops, 1);
 assert.deepEqual(pitted.pitStops, [{ lap: 5, seconds: 250 }]);
 assert.equal(pitted.strategy.pitBreakSeconds, 180);
 assert.equal(buildSession({ id: 'np', track, plannedLaps: 10, focusedSeconds: 900, startedAt: start, endedAt: start }).pitStops, undefined);
+
+// the Store's weekly offers: six random liveries, kept all week, new every Monday
+assert.equal(OFFER_COUNT, 6);
+assert.equal(weekKey(new Date(2026, 9, 19)), '2026-10-19'); // a Monday is its own week
+assert.equal(weekKey(new Date(2026, 9, 21, 15, 0)), '2026-10-19'); // Wednesday
+assert.equal(weekKey(new Date(2026, 9, 25, 23, 59)), '2026-10-19'); // Sunday night is still the same week
+assert.equal(weekKey(new Date(2026, 9, 26, 0, 0)), '2026-10-26'); // the next Monday starts a new one
+assert.equal(weekKey(new Date(2027, 0, 1)), '2026-12-28'); // across the new year
+assert.equal(nextRefresh(new Date(2026, 9, 21, 15, 0)).getTime(), new Date(2026, 9, 26).getTime());
+assert.equal(formatTimeLeft(new Date(2026, 9, 21, 15, 0), new Date(2026, 9, 26)), '4 d 9 h');
+assert.equal(formatTimeLeft(new Date(2026, 9, 25, 18, 40), new Date(2026, 9, 26)), '5 h 20 min');
+assert.equal(formatTimeLeft(new Date(2026, 9, 25, 23, 59, 30), new Date(2026, 9, 26)), '1 min');
+const pool = Array.from({ length: 30 }, (_, i) => `l${i}`);
+const picked = pickOffers(pool, 6);
+assert.equal(picked.length, 6);
+assert.equal(new Set(picked).size, 6); // no repeats
+assert.ok(picked.every((id) => pool.includes(id)));
+assert.deepEqual(pickOffers(['a', 'b'], 6, () => 0).sort(), ['a', 'b']); // fewer for sale than slots: all of them
+assert.deepEqual(pickOffers(pool, 3, () => 0), ['l0', 'l1', 'l2']); // the random source decides the picks
+assert.deepEqual(pickOffers(pool, 2, () => 0.999), ['l29', 'l0']); // the first pick swaps l0 to the end
+// every livery can come up, from any generation
+const seen = new Set();
+for (let i = 0; i < 400; i++) pickOffers(pool, 6).forEach((id) => seen.add(id));
+assert.equal(seen.size, pool.length);
+const wed = new Date(2026, 9, 21, 15, 0);
+const firstWeek = offersForWeek(null, wed, pool, pool);
+assert.ok(firstWeek.fresh && firstWeek.offers.week === '2026-10-19' && firstWeek.offers.liveryIds.length === 6);
+// later the same week: the same offers
+const sameWeek = offersForWeek(firstWeek.offers, new Date(2026, 9, 24), pool, pool);
+assert.equal(sameWeek.fresh, false);
+assert.deepEqual(sameWeek.offers, firstWeek.offers);
+// buying one swaps it, in its place, for another you do not own; the other five stay
+const bought = firstWeek.offers.liveryIds[2];
+const afterBuying = offersForWeek(firstWeek.offers, new Date(2026, 9, 24), pool, pool.filter((id) => id !== bought));
+assert.ok(afterBuying.fresh);
+assert.equal(afterBuying.offers.liveryIds.length, 6);
+assert.ok(!afterBuying.offers.liveryIds.includes(bought));
+assert.equal(new Set(afterBuying.offers.liveryIds).size, 6);
+assert.deepEqual(afterBuying.offers.liveryIds.filter((_, i) => i !== 2), firstWeek.offers.liveryIds.filter((_, i) => i !== 2));
+// next week: a new set, from what you still do not own; with only four left, two owned ones fill the places
+const owned = new Set(pool.slice(0, 26));
+const nextWeek = offersForWeek(firstWeek.offers, new Date(2026, 9, 27), pool, pool.filter((id) => !owned.has(id)));
+assert.ok(nextWeek.fresh && nextWeek.offers.week === '2026-10-26');
+assert.equal(nextWeek.offers.liveryIds.length, 6);
+assert.deepEqual(nextWeek.offers.liveryIds.slice(0, 4).sort(), ['l26', 'l27', 'l28', 'l29']); // the ones to buy come first
+assert.ok(nextWeek.offers.liveryIds.slice(4).every((id) => owned.has(id)));
+// with fewer than six left, buying one cannot be replaced by another to buy, so it stays (shown as owned)
+const lastFew = offersForWeek(nextWeek.offers, new Date(2026, 9, 28), pool, ['l26', 'l27', 'l28']);
+assert.deepEqual(lastFew.offers.liveryIds, nextWeek.offers.liveryIds);
+// no owned livery is shown while there are enough left to buy
+for (let n = 6; n <= 30; n++) {
+  const forSale = pool.slice(30 - n);
+  assert.ok(offersForWeek(null, wed, pool, forSale).offers.liveryIds.every((id) => forSale.includes(id)), `${n} for sale`);
+}
+// a livery removed from the game drops out of saved offers (and its place is filled); junk is replaced
+const cleaned = offersForWeek({ week: '2026-10-19', liveryIds: ['l1', 'gone', 7] }, wed, pool, pool).offers.liveryIds;
+assert.equal(cleaned[0], 'l1');
+assert.ok(cleaned.length === 6 && !cleaned.includes('gone'));
+assert.ok(offersForWeek('junk', wed, pool, pool).fresh);
+// owning everything: six owned ones are shown
+const allOwned = offersForWeek(null, wed, pool, []).offers.liveryIds;
+assert.equal(allOwned.length, 6);
 
 console.log('all rule checks passed');
