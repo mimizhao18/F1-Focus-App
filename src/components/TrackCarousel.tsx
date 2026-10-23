@@ -1,6 +1,6 @@
 import { memo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
-import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+import type { NativeScrollEvent, NativeSyntheticEvent, ScrollViewInstance } from 'react-native';
 
 import { isTrackUnlocked } from '../data/tracks';
 import { makeStyles, useTheme } from '../design/styles';
@@ -64,7 +64,7 @@ export function TrackCarousel({ tracks, level, selectedId, onSelect }: Props) {
   const windowWidth = useWindowDimensions().width;
   const [measured, setMeasured] = useState(0);
   const width = measured > 0 ? measured : Math.max(200, Math.min(windowWidth, 460) - theme.spacing.screen * 2);
-  const listRef = useRef<ScrollView>(null);
+  const listRef = useRef<ScrollViewInstance>(null);
 
   const interval = width + gap;
   const selectedIndex = Math.max(0, tracks.findIndex((t) => t.id === selectedId));

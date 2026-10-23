@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { GestureResponderEvent, View } from 'react-native';
+import type { HostInstance } from 'react-native';
 
 import { makeStyles, useTheme } from '../design/styles';
 
@@ -28,7 +29,7 @@ export function Slider({ value, min, max, step = 1, onChange, accessibilityLabel
   const styles = useStyles();
   const { size } = useTheme();
   const [width, setWidth] = useState(0);
-  const barRef = useRef<View>(null);
+  const barRef = useRef<HostInstance>(null);
 
   const valueAt = (pageX: number, barLeft: number) => {
     if (width <= 0) return min;
