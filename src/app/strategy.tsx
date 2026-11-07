@@ -240,8 +240,10 @@ function Builder({
     : compounds.length > laps
       ? `${laps} ${laps === 1 ? 'lap is' : 'laps are'} too short for ${compounds.length - 1} stops.`
       : compounds.length === 1 && minutes > TIRES.hard.maxMinutes
-        ? `A race over an hour needs a pit stop: even hards last ${TIRES.hard.maxMinutes} minutes at most.`
-        : `These tires cannot last ${laps} laps (${formatDurationWords(laps * track.lapTimeSeconds)}). Add a stop or pick harder tires.`;
+        ? `A race over ${TIRES.hard.maxMinutes} minutes needs a pit stop: even hards last ${TIRES.hard.maxMinutes} minutes at most.`
+        : compounds.reduce((sum, c) => sum + tireLaps(track, c, 'min'), 0) > laps
+          ? `A stint can't be shorter than its tire's minimum. Remove a stop or pick softer tires.`
+          : `These tires cannot last ${laps} laps (${formatDurationWords(laps * track.lapTimeSeconds)}). Add a stop or pick harder tires.`;
 
   const ranges = stints ? stintRanges(stints) : [];
   return (
@@ -282,12 +284,14 @@ function Builder({
 
       <View style={styles.legend}>
         {COMPOUNDS.map((c) => (
-          <View key={c} style={styles.legendItem} accessible accessibilityLabel={`${TIRES[c].name}s: ${TIRES[c].targetMinutes} to ${TIRES[c].maxMinutes} minutes, up to ${tireLaps(track, c, 'max')} laps here`}>
+          <View key={c} style={styles.legendItem} accessible accessibilityLabel={`${TIRES[c].name}s: ${TIRES[c].minMinutes} to ${TIRES[c].maxMinutes} minutes, ${tireLaps(track, c, 'min')} to ${tireLaps(track, c, 'max')} laps here`}>
             <TireIcon compound={c} letter />
             <Text style={styles.legendValue}>
-              {TIRES[c].targetMinutes}–{TIRES[c].maxMinutes} min
+              {TIRES[c].minMinutes}–{TIRES[c].maxMinutes} min
             </Text>
-            <Text style={styles.legendNote}>up to {tireLaps(track, c, 'max')} laps</Text>
+            <Text style={styles.legendNote}>
+              {tireLaps(track, c, 'min')}–{tireLaps(track, c, 'max')} laps
+            </Text>
           </View>
         ))}
       </View>

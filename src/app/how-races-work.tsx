@@ -40,7 +40,7 @@ export default function HowRacesWorkScreen() {
       <View style={styles.section}>
         <SectionLabel>Tires and pit stops</SectionLabel>
         <Text style={styles.body}>
-          Pit stops are the breaks in a long race. After choosing your laps you pick a tire strategy: each stint runs on one set of tires, and you pit between stints (up to {MAX_STOPS} stops). Each tire has a target life, and some wiggle room past it:
+          Pit stops are the breaks in a long race. After choosing your laps you pick a tire strategy: each stint runs on one set of tires, and you pit between stints (up to {MAX_STOPS} stops). Each tire has a life window, and every stint has to fit inside it. A stint is never shorter than the minimum or longer than the maximum:
         </Text>
         <View>
           {COMPOUNDS.map((c, i) => (
@@ -48,13 +48,13 @@ export default function HowRacesWorkScreen() {
               <TireIcon compound={c} letter />
               <Text style={styles.tireName}>{TIRES[c].name}</Text>
               <Text style={styles.tireValue}>
-                {TIRES[c].targetMinutes} min, up to {TIRES[c].maxMinutes}
+                {TIRES[c].minMinutes} to {TIRES[c].maxMinutes} min
               </Text>
             </View>
           ))}
         </View>
         <Text style={styles.body}>
-          So a race over {words(TIRES.hard.maxMinutes * 60)} needs at least one stop. A stop is a break of {PIT_BREAK_MINUTES[0]} to {PIT_BREAK_MINUTES[PIT_BREAK_MINUTES.length - 1]} min, and you can leave the app during it. When the break ends the pit exit opens and the race waits for you: more than {words(PIT_EXIT.slowStopAfterSeconds)} late is a slow stop (a warning), and {words(PIT_EXIT.crashAfterSeconds)} late ends the race with a DNF.
+          So a race over {words(TIRES.hard.maxMinutes * 60)} needs at least one stop, and a race under {words(TIRES.soft.minMinutes * 60)} has no stops at all. A stop is a break of {PIT_BREAK_MINUTES[0]} to {PIT_BREAK_MINUTES[PIT_BREAK_MINUTES.length - 1]} min, and you can leave the app during it. When the break ends the pit exit opens and the race waits for you: more than {words(PIT_EXIT.slowStopAfterSeconds)} late is a slow stop (a warning), and {words(PIT_EXIT.crashAfterSeconds)} late ends the race with a DNF.
         </Text>
       </View>
 

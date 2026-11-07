@@ -489,23 +489,39 @@ assert.deepEqual(formatDistance(5.891, 'km', 2), { value: '5.89', unit: 'km' });
 assert.deepEqual(formatDistance(5.891, 'mi', 2), { value: '3.66', unit: 'mi' });
 assert.deepEqual(formatDistance(KM_PER_MILE * 10, 'mi', 0), { value: '10', unit: 'mi' });
 
-// tire strategy: each tire has a target life and a longer maximum (the wiggle room)
+// tire strategy: each tire has a life window, and every stint must fit inside it
 const silverstone = { lapTimeSeconds: 90, raceLaps: 52 };
 const monaco = { lapTimeSeconds: 70, raceLaps: 78 };
-assert.equal(tireLaps(silverstone, 'soft', 'target'), 10); // 15 min at 90 s a lap
-assert.equal(tireLaps(silverstone, 'medium', 'target'), 20);
-assert.equal(tireLaps(silverstone, 'hard', 'target'), 30);
-assert.equal(tireLaps(silverstone, 'hard', 'max'), 40); // hards last up to an hour
-assert.equal(tireLaps(monaco, 'soft', 'target'), 12); // rounded down: 12 laps is 14 min, never more than the tire allows
-assert.ok(Object.values(TIRES).every((t) => t.maxMinutes > t.targetMinutes));
-assert.equal(TIRES.hard.maxMinutes, 60);
+assert.deepEqual([TIRES.soft, TIRES.medium, TIRES.hard].map((t) => [t.minMinutes, t.maxMinutes]), [[15, 30], [30, 45], [45, 65]]);
+assert.ok(Object.values(TIRES).every((t) => t.minMinutes < t.targetMinutes && t.targetMinutes < t.maxMinutes));
+assert.equal(tireLaps(silverstone, 'soft', 'min'), 10); // 15 min at 90 s a lap
+assert.equal(tireLaps(silverstone, 'soft', 'max'), 20); // 30 min
+assert.equal(tireLaps(silverstone, 'medium', 'min'), 20);
+assert.equal(tireLaps(silverstone, 'medium', 'max'), 30);
+assert.equal(tireLaps(silverstone, 'hard', 'min'), 30);
+assert.equal(tireLaps(silverstone, 'hard', 'max'), 43); // 65 min is 43.3 laps: rounded down
+assert.equal(tireLaps(monaco, 'soft', 'min'), 13); // rounded up: 12 laps is only 14 min, under the minimum
+assert.equal(tireLaps(monaco, 'soft', 'max'), 25); // rounded down: 26 laps is 30.3 min, over the maximum
 
-// laps are shared in proportion to tire life, whole, and never past a tire's maximum
+// laps are shared in proportion to tire life, whole, and always inside each tire's window
 assert.deepEqual(splitLaps(silverstone, 40, ['medium', 'medium']), [{ compound: 'medium', laps: 20 }, { compound: 'medium', laps: 20 }]);
 assert.deepEqual(splitLaps(silverstone, 40, ['soft', 'hard']), [{ compound: 'soft', laps: 10 }, { compound: 'hard', laps: 30 }]);
-assert.equal(splitLaps(silverstone, 41, ['hard']), null); // over an hour on one set of tires
-assert.equal(splitLaps(silverstone, 30, ['soft', 'soft']), null); // two softs last 26 laps at most
+assert.equal(splitLaps(silverstone, 44, ['hard']), null); // over 65 minutes on one set of tires
+assert.equal(splitLaps(silverstone, 43, ['hard'])?.[0].laps, 43);
+assert.equal(splitLaps(silverstone, 41, ['soft', 'soft']), null); // two softs last 40 laps at most
+assert.equal(splitLaps(silverstone, 25, ['hard', 'soft']), null); // a hard stint is at least 30 laps here
+assert.equal(splitLaps(silverstone, 19, ['soft', 'soft']), null); // each soft stint is at least 10 laps (15 min)
 assert.equal(splitLaps(silverstone, 2, ['soft', 'soft', 'soft']), null); // more stints than laps
+assert.equal(splitLaps(silverstone, 8, ['hard'])?.[0].laps, 8); // a short race without a stop can use any tire
+assert.equal(splitLaps(silverstone, 8, ['soft', 'soft']), null); // but not with a stop: that would make stints under the minimum
+// no stint is ever outside its tire's window, however the race is split
+for (let laps = 1; laps <= 90; laps++) {
+  for (const compounds of [['soft', 'medium'], ['hard', 'soft'], ['medium', 'medium', 'hard'], ['soft', 'soft', 'soft', 'soft']]) {
+    for (const s of splitLaps(silverstone, laps, compounds) ?? []) {
+      assert.ok(s.laps >= tireLaps(silverstone, s.compound, 'min') && s.laps <= tireLaps(silverstone, s.compound, 'max'), `${laps} laps on ${compounds}`);
+    }
+  }
+}
 for (let laps = 1; laps <= 80; laps++) {
   for (const compounds of [['soft'], ['medium', 'hard'], ['hard', 'hard', 'hard'], ['soft', 'medium', 'hard', 'medium']]) {
     const stints = splitLaps(silverstone, laps, compounds);
@@ -513,51 +529,79 @@ for (let laps = 1; laps <= 80; laps++) {
   }
 }
 
-// a race over an hour must have a stop; two hours of racing always fits in three stops
-assert.equal(minStops(silverstone, 40), 0); // exactly an hour
-assert.equal(minStops(silverstone, 41), 1);
+// a race over 65 minutes must have a stop; two hours of racing always fits in three stops
+assert.equal(minStops(silverstone, 43), 0); // just under 65 minutes
+assert.equal(minStops(silverstone, 44), 1);
 assert.equal(minStops(silverstone, 80), 1); // two hards
 assert.equal(minStops(monaco, 102), 1);
-assert.equal(bestStrategy(silverstone, 41, 0), null);
+assert.equal(bestStrategy(silverstone, 44, 0), null);
 for (const t of [silverstone, monaco, { lapTimeSeconds: 100, raceLaps: 44 }]) {
   for (let laps = 1; laps <= maxLaps(t); laps++) {
     const options = strategyOptions(t, laps);
     assert.ok(options.length >= 1 && options[0].kind === 'recommended', `options for ${laps} laps`);
     for (const o of options) assert.ok(isValidStrategy(t, laps, o.strategy) && pitLaps(o.strategy).length <= MAX_STOPS);
     const minutes = (laps * t.lapTimeSeconds) / 60;
-    if (minutes > 60) assert.ok(options.every((o) => o.strategy.stints.length > 1), `${laps} laps needs a stop`);
+    if (minutes > 65) assert.ok(options.every((o) => o.strategy.stints.length > 1), `${laps} laps needs a stop`);
+    // every stint of every option is inside its tire's window (a no-stop race under the softest minimum excepted)
+    for (const o of options) {
+      if (o.strategy.stints.length === 1 && minutes < TIRES.soft.minMinutes) continue;
+      for (const s of o.strategy.stints) assert.ok(s.laps >= tireLaps(t, s.compound, 'min') && s.laps <= tireLaps(t, s.compound, 'max'), `${laps} laps: ${encodeStrategy(o.strategy)}`);
+    }
   }
 }
 
-// the recommended strategy: a break about every 45 minutes, stints as close to their tire's target as possible, even breaks
+// the recommended strategy: a break about every 55 minutes, stints as close to their tire's target as possible, even breaks
 const stints = (laps, stops) => bestStrategy(silverstone, laps, stops).stints.map((s) => `${TIRES[s.compound].letter}${s.laps}`).join(' ');
-assert.equal(stints(40, 1), 'M20 M20'); // 60 min: even mediums beat a soft then a hard
-assert.equal(stints(60, 1), 'H30 H30'); // 90 min
+assert.equal(stints(40, 1), 'M24 S16'); // 60 min: 36 and 24 minutes, whole minutes, close to each tire's target and the most even of the ties
+assert.equal(stints(60, 1), 'M24 H36'); // 90 min: 36 and 54 minutes, almost exactly each tire's target
 assert.equal(strategyOptions(silverstone, 20)[0].strategy.stints.length, 1); // 30 min: no stop
 assert.equal(strategyOptions(silverstone, 30)[0].strategy.stints.length, 1); // 45 min: no stop
+assert.equal(strategyOptions(silverstone, 36)[0].strategy.stints.length, 1); // 54 min: still no stop
 assert.equal(strategyOptions(silverstone, 40)[0].strategy.stints.length, 2); // 60 min: one stop
 assert.equal(strategyOptions(silverstone, 80)[0].strategy.stints.length, 3); // 2 h: two stops
 assert.deepEqual(strategyOptions(silverstone, 40).map((o) => o.kind), ['recommended', 'fewer', 'more']);
-assert.deepEqual(strategyOptions(silverstone, 4).map((o) => o.kind), ['recommended']); // 6 min: no extra stop offered
+assert.deepEqual(strategyOptions(silverstone, 4).map((o) => o.kind), ['recommended']); // 6 min: no stop offered
+assert.deepEqual(strategyOptions(silverstone, 12).map((o) => o.kind), ['recommended']); // 18 min: two stints would each be under 15 min
+
+// stints last a whole number of minutes whenever some split of the race into those tires allows it
+const whole = (t, laps) => (laps * t.lapTimeSeconds) % 60 === 0;
+/** True if these compounds can share `total` laps in whole-minute stints, each inside its tire's window. */
+const canBeWhole = (t, total, compounds, from = 0, left = total) =>
+  from === compounds.length
+    ? left === 0
+    : Array.from({ length: tireLaps(t, compounds[from], 'max') - tireLaps(t, compounds[from], 'min') + 1 }, (_, k) => tireLaps(t, compounds[from], 'min') + k).some((l) => l <= left && whole(t, l) && canBeWhole(t, total, compounds, from + 1, left - l));
+for (const t of [silverstone, monaco, { lapTimeSeconds: 80, raceLaps: 58 }, { lapTimeSeconds: 100, raceLaps: 44 }]) {
+  for (let laps = 15; laps <= maxLaps(t); laps++) {
+    if ((laps * t.lapTimeSeconds) / 60 < TIRES.soft.minMinutes) continue; // a short no-stop race is a single stint of any tire
+    for (const o of strategyOptions(t, laps)) {
+      const compounds = o.strategy.stints.map((st) => st.compound);
+      const loose = o.strategy.stints.filter((st) => !whole(t, st.laps)).length;
+      if (canBeWhole(t, laps, compounds)) assert.equal(loose, 0, `${laps} laps at ${t.lapTimeSeconds} s: ${encodeStrategy(o.strategy)}`);
+    }
+  }
+}
+assert.equal(stints(21, 0), 'M21'); // 31.5 min on one set: not a whole number of minutes, but the race itself is not either
 
 // pits, stints, names and links
-const plan = { stints: [{ compound: 'medium', laps: 20 }, { compound: 'hard', laps: 25 }, { compound: 'soft', laps: 8 }] };
-assert.deepEqual(pitLaps(plan), [20, 45]);
-assert.deepEqual(stintRanges(plan.stints), [{ from: 1, to: 20 }, { from: 21, to: 45 }, { from: 46, to: 53 }]);
+const plan = { stints: [{ compound: 'medium', laps: 20 }, { compound: 'hard', laps: 30 }, { compound: 'soft', laps: 12 }] };
+assert.deepEqual(pitLaps(plan), [20, 50]);
+assert.deepEqual(stintRanges(plan.stints), [{ from: 1, to: 20 }, { from: 21, to: 50 }, { from: 51, to: 62 }]);
 assert.equal(stintIndexAt(plan, 0), 0);
 assert.equal(stintIndexAt(plan, 19), 0);
 assert.equal(stintIndexAt(plan, 20), 1); // in the pits after lap 20: on to the second stint
-assert.equal(stintIndexAt(plan, 52), 2);
+assert.equal(stintIndexAt(plan, 61), 2);
 assert.equal(stopperName(0), 'No-stopper');
 assert.equal(stopperName(2), 'Two-stopper');
-assert.equal(encodeStrategy(plan), 'm20-h25-s8');
-assert.deepEqual(decodeStrategy('m20-h25-s8'), plan);
+assert.equal(encodeStrategy(plan), 'm20-h30-s12');
+assert.deepEqual(decodeStrategy('m20-h30-s12'), plan);
 assert.equal(decodeStrategy('x20'), null);
 assert.equal(decodeStrategy('m20--h3'), null);
 assert.equal(decodeStrategy(undefined), null);
-assert.ok(isValidStrategy(silverstone, 53, plan));
-assert.ok(!isValidStrategy(silverstone, 52, plan)); // must cover exactly the race
+assert.ok(isValidStrategy(silverstone, 62, plan));
+assert.ok(!isValidStrategy(silverstone, 61, plan)); // must cover exactly the race
 assert.ok(!isValidStrategy(silverstone, 61, { stints: [{ compound: 'soft', laps: 21 }, { compound: 'hard', laps: 40 }] })); // softs last 20 laps here
+assert.ok(isValidStrategy(silverstone, 50, { stints: [{ compound: 'soft', laps: 11 }, { compound: 'hard', laps: 39 }] })); // 16.5 min of softs is inside the window
+assert.ok(!isValidStrategy(silverstone, 40, { stints: [{ compound: 'soft', laps: 9 }, { compound: 'hard', laps: 31 }] })); // 9 laps of softs is 13.5 min, under the minimum
 assert.ok(PIT_EXIT.slowStopAfterSeconds < PIT_EXIT.crashAfterSeconds && PIT_EXIT.crashAfterSeconds === 180);
 
 // slow pit stops count as warnings toward the rewards penalty
