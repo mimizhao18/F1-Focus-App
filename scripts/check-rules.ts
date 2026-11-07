@@ -31,7 +31,7 @@ import { glowHexFor, hexToRgb255 } from '../src/components/car3d/glow.ts';
 import { TRACK_LIST, isTrackUnlocked } from '../src/data/tracks/index.ts';
 import { applySessionToStreak, daysBetween, displayedStreak } from '../src/logic/streak.ts';
 import { OFFER_COUNT, formatTimeLeft, nextRefresh, offersForWeek, pickOffers, weekKey } from '../src/logic/shop.ts';
-import { MAX_STOPS, PIT_EXIT, TIRES, bestStrategy, decodeStrategy, encodeStrategy, isValidStrategy, minStops, pitLaps, splitLaps, stintIndexAt, stintRanges, stopperName, strategyOptions, tireLaps } from '../src/logic/strategy.ts';
+import { MAX_STOPS, PIT_EXIT, TIRES, bestStrategy, decodeStrategy, encodeStrategy, isValidStrategy, minStops, movePit, pitLaps, splitLaps, stintIndexAt, stintRanges, stopperName, strategyOptions, tireLaps } from '../src/logic/strategy.ts';
 import { DEFAULT_SETTINGS, KM_PER_MILE, cleanDriverCode, driverCodeFor, formatDistance, normalizeSettings } from '../src/logic/settings.ts';
 
 const track = { id: 'silverstone', lapLengthKm: 5.891, lapTimeSeconds: 90 };
@@ -581,6 +581,29 @@ for (const t of [silverstone, monaco, { lapTimeSeconds: 80, raceLaps: 58 }, { la
   }
 }
 assert.equal(stints(21, 0), 'M21'); // 31.5 min on one set: not a whole number of minutes, but the race itself is not either
+
+// dragging a pit stop moves time between its two stints, which both stay inside their tire's window
+{
+  const two = [{ compound: 'medium', laps: 24 }, { compound: 'soft', laps: 16 }]; // 36 min + 24 min at 90 s a lap
+  assert.deepEqual(movePit(silverstone, 40, two, 0, 28).map((s) => s.laps), [28, 12]); // 42 + 18 min
+  assert.deepEqual(movePit(silverstone, 40, two, 0, 21).map((s) => s.laps), [20, 20]); // 21 laps would be 31.5 min: it lands on a whole minute
+  assert.deepEqual(movePit(silverstone, 40, two, 0, 5).map((s) => s.laps), [20, 20]); // a medium needs 30 min, so it cannot get shorter
+  assert.deepEqual(movePit(silverstone, 40, two, 0, 39).map((s) => s.laps), [30, 10]); // a soft needs 15 min, and a medium runs 45 at most
+  assert.deepEqual(movePit(silverstone, 40, two, 1, 10), two); // the last tire is the end of the race and cannot be moved
+  assert.deepEqual(movePit(silverstone, 40, two, -1, 10), two);
+  assert.deepEqual(movePit(silverstone, 40, [{ compound: 'soft', laps: 20 }, { compound: 'soft', laps: 20 }], 0, 12).map((s) => s.laps), [20, 20]); // two softs have no room at all
+  const three = [{ compound: 'soft', laps: 20 }, { compound: 'medium', laps: 20 }, { compound: 'soft', laps: 20 }]; // 90 min
+  assert.deepEqual(movePit(silverstone, 60, three, 1, 48).map((s) => s.laps), [20, 28, 12]); // the second stop moves, the first stays
+  for (let to = 0; to <= 60; to++) {
+    for (const pit of [0, 1]) {
+      const moved = movePit(silverstone, 60, three, pit, to);
+      assert.ok(isValidStrategy(silverstone, 60, { stints: moved }), `pit ${pit} dragged to lap ${to}`);
+      assert.deepEqual(moved.map((s) => s.compound), three.map((s) => s.compound));
+      assert.equal(moved.reduce((sum, s) => sum + s.laps, 0), 60);
+      assert.deepEqual(moved.slice(0, pit).concat(moved.slice(pit + 2)), three.slice(0, pit).concat(three.slice(pit + 2))); // only the two stints beside the stop change
+    }
+  }
+}
 
 // pits, stints, names and links
 const plan = { stints: [{ compound: 'medium', laps: 20 }, { compound: 'hard', laps: 30 }, { compound: 'soft', laps: 12 }] };

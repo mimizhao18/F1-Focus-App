@@ -107,6 +107,31 @@ export function splitLaps(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: numbe
   return compounds.map((compound, i) => ({ compound, laps: laps[i] }));
 }
 
+/**
+ * Moves the pit stop at the end of stint `pit` (0 is the first stop) to lap `toLap`, lengthening one of its two stints
+ * and shortening the other. Both stay inside their tire's window, so the stop lands on the nearest lap that allows
+ * that, and it prefers laps that keep both stints a whole number of minutes. The last stint is never moved directly: it
+ * only changes when the stop before it does. Returns the same stints if nothing can move.
+ */
+export function movePit(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: number, stints: readonly Stint[], pit: number, toLap: number): Stint[] {
+  if (!Number.isInteger(pit) || pit < 0 || pit >= stints.length - 1) return [...stints];
+  const n = stints.length;
+  const before = stints.slice(0, pit).reduce((sum, s) => sum + s.laps, 0);
+  const a = stints[pit];
+  const b = stints[pit + 1];
+  const end = before + a.laps + b.laps;
+  const first = Math.max(before + minStintLaps(track, a.compound, totalLaps, n), end - tireLaps(track, b.compound, 'max'));
+  const last = Math.min(before + tireLaps(track, a.compound, 'max'), end - minStintLaps(track, b.compound, totalLaps, n));
+  let best: { lap: number; loose: number; distance: number } | null = null;
+  for (let lap = first; lap <= last; lap++) {
+    const loose = (isWholeMinutes(track, lap - before) ? 0 : 1) + (isWholeMinutes(track, end - lap) ? 0 : 1);
+    const distance = Math.abs(lap - toLap);
+    if (!best || loose < best.loose || (loose === best.loose && distance < best.distance)) best = { lap, loose, distance };
+  }
+  if (!best) return [...stints];
+  return stints.map((s, i) => (i === pit ? { ...s, laps: best.lap - before } : i === pit + 1 ? { ...s, laps: end - best.lap } : s));
+}
+
 /** True if the strategy covers exactly the race, with every stint inside its tire's life window and no more than MAX_STOPS stops. */
 export function isValidStrategy(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: number, strategy: Strategy): boolean {
   const { stints } = strategy;

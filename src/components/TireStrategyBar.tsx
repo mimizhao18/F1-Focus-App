@@ -1,4 +1,6 @@
+import { useRef, useState } from 'react';
 import { Text, View } from 'react-native';
+import type { GestureResponderEvent, HostInstance } from 'react-native';
 
 import { makeStyles, useTheme } from '../design/styles';
 import { TIRES, stintRanges } from '../logic/strategy';
@@ -37,15 +39,22 @@ export function TireStrategyBar({
   labels = false,
   lapSeconds,
   completedLaps,
+  onMovePit,
 }: {
   stints: readonly Stint[];
   size?: 'large' | 'small';
   labels?: boolean;
   lapSeconds?: number;
   completedLaps?: number;
+  /** Makes every pit stop draggable along the line: called with the stop (0 is the first) and the lap it is dragged to. */
+  onMovePit?: (pit: number, lap: number) => void;
 }) {
   const styles = useStyles();
   const t = useTheme();
+  const laneRef = useRef<HostInstance>(null);
+  // the stop being dragged, and where the lane is on screen (measured when the touch starts, so scrolling is allowed for)
+  const drag = useRef<{ pit: number; left: number; width: number } | null>(null);
+  const [dragging, setDragging] = useState<number | null>(null);
   const total = stints.reduce((sum, s) => sum + s.laps, 0);
   if (total === 0) return null;
   const iconSize = size === 'large' ? t.size.tire : t.size.tireSmall;
@@ -54,6 +63,39 @@ export function TireStrategyBar({
   const done = completedLaps ?? total;
 
   const ends = stintRanges(stints).map((range, i) => ({ stint: stints[i], start: range.from - 1, end: range.to }));
+
+  const lapAt = (pageX: number, left: number, width: number) => Math.round(Math.max(0, Math.min(1, (pageX - left) / width)) * total);
+  // the touch takes hold of the nearest stop (never the last tire, which is only the end of the race)
+  const grab = (e: GestureResponderEvent) => {
+    const pageX = e.nativeEvent.pageX;
+    laneRef.current?.measureInWindow((left, _top, width) => {
+      if (width <= 0 || ends.length < 2) return;
+      let pit = 0;
+      for (let i = 1; i < ends.length - 1; i++) if (Math.abs(left + (ends[i].end / total) * width - pageX) < Math.abs(left + (ends[pit].end / total) * width - pageX)) pit = i;
+      drag.current = { pit, left, width };
+      setDragging(pit);
+      onMovePit?.(pit, lapAt(pageX, left, width));
+    });
+  };
+  const move = (e: GestureResponderEvent) => {
+    const d = drag.current;
+    if (d) onMovePit?.(d.pit, lapAt(e.nativeEvent.pageX, d.left, d.width));
+  };
+  const release = () => {
+    drag.current = null;
+    setDragging(null);
+  };
+  const touch = onMovePit && ends.length > 1
+    ? {
+        onStartShouldSetResponder: () => true,
+        onMoveShouldSetResponder: () => true,
+        onResponderTerminationRequest: () => false, // keep the drag even if the page tries to scroll
+        onResponderGrant: grab,
+        onResponderMove: move,
+        onResponderRelease: release,
+        onResponderTerminate: release,
+      }
+    : {};
 
   return (
     <View
@@ -68,7 +110,7 @@ export function TireStrategyBar({
           ))}
         </View>
       )}
-      <View style={[styles.lane, { height: iconSize }]}>
+      <View ref={laneRef} style={[styles.lane, { height: iconSize }]} {...touch}>
         <View style={[styles.line, { top: (iconSize - lineHeight) / 2, height: lineHeight }]}>
           {ends.map(({ stint, start, end }, i) => {
             // a stint the race did not finish is drawn faded from the point the race ended
@@ -81,7 +123,7 @@ export function TireStrategyBar({
           })}
         </View>
         {ends.map(({ stint, end }, i) => (
-          <View key={i} style={[styles.pin, { left: `${(end / total) * 100}%`, marginLeft: -iconSize / 2 }]}>
+          <View key={i} style={[styles.pin, { left: `${(end / total) * 100}%`, marginLeft: -iconSize / 2, pointerEvents: 'none' }, dragging === i && { transform: [{ scale: 1.2 }] }]}>
             <TireIcon compound={stint.compound} size={iconSize} dimmed={end > done} />
           </View>
         ))}

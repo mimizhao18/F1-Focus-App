@@ -13,7 +13,7 @@ import { TRACKS, isTrackId } from '../data/tracks';
 import { makeStyles, useTheme } from '../design/styles';
 import { clampLaps } from '../logic/raceLength';
 import { formatDurationWords } from '../logic/sessionOptions';
-import { COMPOUNDS, MAX_STOPS, PIT_BREAK_MINUTES, TIRES, encodeStrategy, pitLaps, splitLaps, stintRanges, stopCount, stopperName, strategyOptions, tireLaps } from '../logic/strategy';
+import { COMPOUNDS, MAX_STOPS, PIT_BREAK_MINUTES, TIRES, encodeStrategy, isValidStrategy, movePit, pitLaps, splitLaps, stintRanges, stopCount, stopperName, strategyOptions, tireLaps } from '../logic/strategy';
 import type { Compound, StrategyKind } from '../logic/strategy';
 import type { Stint, Track } from '../models/types';
 import { updateSettings } from '../storage/settings';
@@ -62,7 +62,16 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
     return () => clearInterval(timer);
   }, []);
 
-  const customStints = useMemo(() => splitLaps(track, laps, compounds), [track, laps, compounds]);
+  // stint lengths the player has dragged into place; null until they do, and again whenever the number of stops changes
+  const [manualLaps, setManualLaps] = useState<number[] | null>(null);
+  const customStints = useMemo(() => {
+    if (manualLaps && manualLaps.length === compounds.length) {
+      const stints = compounds.map((compound, i) => ({ compound, laps: manualLaps[i] }));
+      // changing a tire keeps the dragged lengths as long as they still fit its window
+      if (isValidStrategy(track, laps, { stints })) return stints;
+    }
+    return splitLaps(track, laps, compounds);
+  }, [track, laps, compounds, manualLaps]);
   const chosen: Stint[] | null = custom ? customStints : (options.find((o) => o.kind === choice)?.strategy.stints ?? null);
   const stops = chosen ? chosen.length - 1 : 0;
 
@@ -70,8 +79,14 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
   const pitSeconds = stops * breakMinutes * 60;
   const finish = new Date(now + (racingSeconds + pitSeconds) * 1000);
 
-  const setStops = (count: number) =>
+  const movePitTo = (pit: number, lap: number) => {
+    if (!customStints) return;
+    setManualLaps(movePit(track, laps, customStints, pit, lap).map((s) => s.laps));
+  };
+  const setStops = (count: number) => {
+    setManualLaps(null);
     setCompounds((current) => (count < current.length ? current.slice(0, count + 1) : [...current, ...Array<Compound>(count + 1 - current.length).fill(current[current.length - 1] ?? 'medium')]));
+  };
   const setCompound = (index: number, compound: Compound) => setCompounds((current) => current.map((c, i) => (i === index ? compound : c)));
 
   const chooseBreak = (minutes: number) => {
@@ -150,7 +165,7 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
         </View>
 
         {custom && (
-          <Builder track={track} laps={laps} compounds={compounds} stints={customStints} onStops={setStops} onCompound={setCompound} />
+          <Builder track={track} laps={laps} compounds={compounds} stints={customStints} onStops={setStops} onCompound={setCompound} onMovePit={movePitTo} />
         )}
 
         {stops > 0 && (
@@ -224,6 +239,7 @@ function Builder({
   stints,
   onStops,
   onCompound,
+  onMovePit,
 }: {
   track: Track;
   laps: number;
@@ -231,6 +247,7 @@ function Builder({
   stints: Stint[] | null;
   onStops: (stops: number) => void;
   onCompound: (index: number, compound: Compound) => void;
+  onMovePit: (pit: number, lap: number) => void;
 }) {
   const styles = useStyles();
   const t = useTheme();
@@ -251,7 +268,8 @@ function Builder({
       <SectionLabel>Pit stops</SectionLabel>
       <SegmentedControl options={STOP_OPTIONS.slice(0, Math.min(MAX_STOPS, laps - 1) + 1)} value={String(compounds.length - 1) as (typeof STOP_OPTIONS)[number]} onChange={(s) => onStops(Number(s))} labelFor={(s) => (s === '0' ? 'None' : s)} />
 
-      {stints ? <TireStrategyBar stints={stints} labels lapSeconds={track.lapTimeSeconds} /> : <Text style={styles.problem}>{problem}</Text>}
+      {stints ? <TireStrategyBar stints={stints} labels lapSeconds={track.lapTimeSeconds} onMovePit={onMovePit} /> : <Text style={styles.problem}>{problem}</Text>}
+      {stints && stints.length > 1 && <Text style={styles.muted}>Drag a pit stop left or right to change how long each stint runs.</Text>}
 
       <View>
         {compounds.map((compound, i) => {
