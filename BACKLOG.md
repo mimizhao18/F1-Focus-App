@@ -46,11 +46,9 @@ Answer these whenever you have time. Short answers are fine; "your call" is a va
 - **Spa lap record.** The F1 page lists 1:44.701 (Perez, 2024), which gives 100 s per lap. Worth double-checking against another source, since the long-standing race lap record is often quoted as 1:46.286 (110 s).
 - **Monaco hairpin.** The turn 5-7 section is simplified by the tracing; hand-tune if it looks wrong.
 - **Track shape.** Lightly smoothed trace; tight corners may still look slightly rough. Could be hand-tuned.
-- **Keep the screen awake during a race.** `expo-keep-awake` would not install (peer dependency conflict in Expo's optional packages). The timer stays correct without it, but the phone may dim or sleep.
 - **three.js on phones needs a Metro setting.** `three` 0.18x ships a CommonJS file that calls the Node-only `process.emitWarning`, which crashes the app's 3D code on a phone. `metro.config.js` points every `three` import at `build/three.module.js`. If `three` is upgraded and the 3D car breaks on a phone, check that setting first. (Found 2026-10-05.)
-- **Package install conflict.** `expo-keep-awake` and `@react-native-community/slider` both fail to install because npm cannot resolve optional peer dependencies in Expo's tree (`react-native-worklets`, `react-dom`). The race-length slider is therefore a small custom component (`src/components/Slider.tsx`). Worth fixing the root cause, for example by pinning those peers, before adding more packages.
+- **Package install conflict.** `expo-keep-awake` now installs fine on SDK 58 (used on the race screen). `@react-native-community/slider` was not retried, so the race-length slider is still the custom `src/components/Slider.tsx`; worth testing whether the real one installs now.
 - **Test speed in development.** Races run at 10x/30x/60x add real XP and credits to the profile. Use Settings > Reset all data to clear them.
-- **Expo patch update.** `expo` is one patch behind (57.0.25 vs 57.0.26). Harmless; fix with `npx expo install expo@~57.0.26` when convenient.
 - **Desktop notifications** from Claude when a task finishes were not arriving. Check Windows notification settings (Claude allowed, Do not disturb off).
 - **Sessions under 1 minute** earn nothing and are not saved.
 

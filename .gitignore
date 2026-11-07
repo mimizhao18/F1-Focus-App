@@ -45,3 +45,6 @@ reference/
 
 # livery-detail work-in-progress renders (the kept pictures are in the generation folders)
 docs/livery-detail/wip/
+
+# Claude Code local files
+.claude/

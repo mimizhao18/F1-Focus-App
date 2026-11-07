@@ -1,3 +1,4 @@
+import { useKeepAwake } from 'expo-keep-awake';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Text, useWindowDimensions, View } from 'react-native';
@@ -34,6 +35,8 @@ const WARNING_SHOWN_MS = 6000;
 
 export default function SessionScreen() {
   const styles = useStyles();
+  // Keep the screen on for the whole race so the phone does not dim or sleep.
+  useKeepAwake();
   const params = useLocalSearchParams<{ track?: string; laps?: string; speed?: string; strategy?: string; pit?: string }>();
   const track = isTrackId(params.track) ? TRACKS[params.track] : undefined;
   const laps = Number(params.laps);
@@ -59,6 +62,8 @@ export default function SessionScreen() {
 
 function Race({ track, laps, speed, strategy, breakSeconds }: { track: Track; laps: number; speed: number; strategy: Strategy | null; breakSeconds: number }) {
   const styles = useStyles();
+  // Keep the screen on for the whole race so the phone does not dim or sleep.
+  useKeepAwake();
   const t = useTheme();
   const pits = useMemo(() => (strategy && strategy.stints.length > 1 ? { afterLaps: pitLaps(strategy), breakSeconds } : undefined), [strategy, breakSeconds]);
   const timer = useSessionTimer(track, laps, speed, pits);
