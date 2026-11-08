@@ -74,9 +74,9 @@ export default function RootLayout() {
             <Stack.Screen name="dev/car-views" options={{ title: 'Car views' }} />
             <Stack.Screen name="compare" options={{ title: 'Compare generations' }} />
             <Stack.Screen name="how-races-work" options={{ title: 'How races work' }} />
-            {/* Swipe-back is off here because dragging the race-length slider to the right looks like a back swipe. */}
+            {/* Swipe-back is off on these two because dragging the race-length slider or a pit stop to the right looks like a back swipe. */}
             <Stack.Screen name="create-session" options={{ title: 'New Race', gestureEnabled: false }} />
-            <Stack.Screen name="strategy" options={{ title: 'Strategy' }} />
+            <Stack.Screen name="strategy" options={{ title: 'Strategy', gestureEnabled: false }} />
             <Stack.Screen name="summary" options={{ title: 'Race Summary', headerBackVisible: false, headerLeft: () => null, unstable_headerLeftItems: noItems, gestureEnabled: false }} />
             <Stack.Screen name="session" options={{ title: 'Race', headerShown: false, gestureEnabled: false }} />
           </Stack>

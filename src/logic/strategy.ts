@@ -110,8 +110,10 @@ export function splitLaps(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: numbe
 /**
  * Moves the pit stop at the end of stint `pit` (0 is the first stop) to lap `toLap`, lengthening one of its two stints
  * and shortening the other. Both stay inside their tire's window, so the stop lands on the nearest lap that allows
- * that, and it prefers laps that keep both stints a whole number of minutes. The last stint is never moved directly: it
- * only changes when the stop before it does. Returns the same stints if nothing can move.
+ * that. It snaps to laps that keep both stints a whole number of minutes, unless that would leave the stop with nowhere
+ * to go (fewer than two such laps): then any lap inside the windows works, so the stop can always be moved when the
+ * windows allow it. The last stint is never moved directly: it only changes when the stop before it does. Returns the
+ * same stints if nothing can move.
  */
 export function movePit(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: number, stints: readonly Stint[], pit: number, toLap: number): Stint[] {
   if (!Number.isInteger(pit) || pit < 0 || pit >= stints.length - 1) return [...stints];
@@ -122,14 +124,16 @@ export function movePit(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: number,
   const end = before + a.laps + b.laps;
   const first = Math.max(before + minStintLaps(track, a.compound, totalLaps, n), end - tireLaps(track, b.compound, 'max'));
   const last = Math.min(before + tireLaps(track, a.compound, 'max'), end - minStintLaps(track, b.compound, totalLaps, n));
-  let best: { lap: number; loose: number; distance: number } | null = null;
-  for (let lap = first; lap <= last; lap++) {
-    const loose = (isWholeMinutes(track, lap - before) ? 0 : 1) + (isWholeMinutes(track, end - lap) ? 0 : 1);
-    const distance = Math.abs(lap - toLap);
-    if (!best || loose < best.loose || (loose === best.loose && distance < best.distance)) best = { lap, loose, distance };
-  }
-  if (!best) return [...stints];
-  return stints.map((s, i) => (i === pit ? { ...s, laps: best.lap - before } : i === pit + 1 ? { ...s, laps: end - best.lap } : s));
+  if (first > last) return [...stints];
+  const laps: number[] = [];
+  for (let lap = first; lap <= last; lap++) laps.push(lap);
+  const looseAt = (lap: number) => (isWholeMinutes(track, lap - before) ? 0 : 1) + (isWholeMinutes(track, end - lap) ? 0 : 1);
+  const fewest = Math.min(...laps.map(looseAt));
+  const snapTo = laps.filter((lap) => looseAt(lap) === fewest);
+  // with fewer than two snap points there is nothing to drag between, so every lap in the windows is allowed
+  const choices = snapTo.length >= 2 ? snapTo : laps;
+  const lap = choices.reduce((nearest, l) => (Math.abs(l - toLap) < Math.abs(nearest - toLap) ? l : nearest));
+  return stints.map((s, i) => (i === pit ? { ...s, laps: lap - before } : i === pit + 1 ? { ...s, laps: end - lap } : s));
 }
 
 /** True if the strategy covers exactly the race, with every stint inside its tire's life window and no more than MAX_STOPS stops. */

@@ -592,6 +592,15 @@ assert.equal(stints(21, 0), 'M21'); // 31.5 min on one set: not a whole number o
   assert.deepEqual(movePit(silverstone, 40, two, 1, 10), two); // the last tire is the end of the race and cannot be moved
   assert.deepEqual(movePit(silverstone, 40, two, -1, 10), two);
   assert.deepEqual(movePit(silverstone, 40, [{ compound: 'soft', laps: 20 }, { compound: 'soft', laps: 20 }], 0, 12).map((s) => s.laps), [20, 20]); // two softs have no room at all
+  // Monaco (70 s a lap): only 24 laps of softs is a whole number of minutes, but the stop can still move inside the windows
+  const monacoPlan = [{ compound: 'soft', laps: 24 }, { compound: 'medium', laps: 36 }]; // 28 min + 42 min
+  assert.deepEqual(movePit(monaco, 60, monacoPlan, 0, 22).map((s) => s.laps), [22, 38]);
+  assert.deepEqual(movePit(monaco, 60, monacoPlan, 0, 25).map((s) => s.laps), [25, 35]);
+  assert.deepEqual(movePit(monaco, 60, monacoPlan, 0, 5).map((s) => s.laps), [22, 38]); // a medium runs 38 laps (45 min) at most
+  assert.deepEqual(movePit(monaco, 60, monacoPlan, 0, 40).map((s) => s.laps), [25, 35]); // a soft runs 25 laps (30 min) at most
+  const monacoHard = [{ compound: 'soft', laps: 18 }, { compound: 'hard', laps: 42 }]; // 21 min + 49 min
+  assert.deepEqual(movePit(monaco, 60, monacoHard, 0, 14).map((s) => s.laps), [14, 46]);
+  assert.deepEqual(movePit(monaco, 60, monacoHard, 0, 30).map((s) => s.laps), [21, 39]); // a hard needs 39 laps (45 min)
   const three = [{ compound: 'soft', laps: 20 }, { compound: 'medium', laps: 20 }, { compound: 'soft', laps: 20 }]; // 90 min
   assert.deepEqual(movePit(silverstone, 60, three, 1, 48).map((s) => s.laps), [20, 28, 12]); // the second stop moves, the first stays
   for (let to = 0; to <= 60; to++) {

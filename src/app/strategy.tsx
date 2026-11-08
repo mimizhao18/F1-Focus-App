@@ -111,9 +111,8 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
             <Text style={styles.label}>{track.name}</Text>
           </View>
           <Text style={styles.summary}>
-            {laps} {laps === 1 ? 'lap' : 'laps'}
+            {laps} {laps === 1 ? 'lap' : 'laps'} · {formatDurationWords(racingSeconds)}
           </Text>
-          <Text style={styles.muted}>{formatDurationWords(racingSeconds)} of racing, plus your pit stop breaks</Text>
         </View>
 
         <SectionLabel>Strategy</SectionLabel>
