@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AccessibilityInfo, Animated, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,18 +8,22 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Flag } from '../components/Flag';
 import { TireIcon } from '../components/TireIcon';
 import { TireStrategyBar } from '../components/TireStrategyBar';
-import { BracketFrame, Button, SectionLabel, SegmentedControl, StartButton, StatBlock } from '../components/ui';
+import { BracketFrame, Button, Dropdown, SectionLabel, StartButton, StatBlock } from '../components/ui';
 import { TRACKS, isTrackId } from '../data/tracks';
 import { makeStyles, useTheme } from '../design/styles';
 import { clampLaps } from '../logic/raceLength';
 import { formatDurationWords } from '../logic/sessionOptions';
-import { COMPOUNDS, MAX_STOPS, PIT_BREAK_MINUTES, TIRES, encodeStrategy, isValidStrategy, movePit, pitLaps, splitLaps, stintRanges, stopCount, stopperName, strategyOptions, tireLaps } from '../logic/strategy';
-import type { Compound, StrategyKind } from '../logic/strategy';
+import { COMPOUNDS, PIT_BREAK_MINUTES, TIRES, adaptStrategy, bestStrategy, encodeStrategy, isValidStrategy, movePit, pitLaps, pitRange, splitLaps, stopCount, stopperName, strategyOptions, tireLaps } from '../logic/strategy';
+import type { Compound, Strategy as Plan, StrategyKind } from '../logic/strategy';
 import type { Stint, Track } from '../models/types';
 import { updateSettings } from '../storage/settings';
+import { loadSavedStrategy, saveStrategy } from '../storage/strategies';
 import { useSettings } from '../ui/useSettings';
 
 type Choice = StrategyKind | 'custom';
+
+/** How long the warning about a tire that cannot be chosen stays on screen. */
+const WARNING_SECONDS = 3;
 
 const TITLES: Record<StrategyKind, string> = { recommended: 'Recommended', fewer: 'Fewer breaks', more: 'More breaks' };
 const STOP_OPTIONS = ['0', '1', '2', '3'] as const;
@@ -72,6 +76,34 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
     }
     return splitLaps(track, laps, compounds);
   }, [track, laps, compounds, manualLaps]);
+  // The strategy last raced here: Build your own opens on it (the first time it is opened, so later edits are not undone).
+  const [saved, setSaved] = useState<Plan | null>(null);
+  const savedApplied = useRef(false);
+  useEffect(() => {
+    let current = true;
+    loadSavedStrategy(track.id).then(
+      (plan) => current && setSaved(plan),
+      () => {},
+    );
+    return () => {
+      current = false;
+    };
+  }, [track.id]);
+  const toggleCustom = () => {
+    if (!custom && saved && !savedApplied.current) {
+      savedApplied.current = true;
+      const tires = saved.stints.map((s) => s.compound);
+      if (isValidStrategy(track, laps, saved)) {
+        setCompounds(tires);
+        setManualLaps(saved.stints.map((s) => s.laps));
+      } else if (splitLaps(track, laps, tires)) {
+        // a different race length: the same tires, with the laps shared out afresh
+        setCompounds(tires);
+        setManualLaps(null);
+      }
+    }
+    setChoice(custom ? 'recommended' : 'custom');
+  };
   const chosen: Stint[] | null = custom ? customStints : (options.find((o) => o.kind === choice)?.strategy.stints ?? null);
   const stops = chosen ? chosen.length - 1 : 0;
 
@@ -83,9 +115,12 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
     if (!customStints) return;
     setManualLaps(movePit(track, laps, customStints, pit, lap).map((s) => s.laps));
   };
+  // A new number of stops gives the closest strategy to the current one that works, the first stint kept as close as it can be.
   const setStops = (count: number) => {
-    setManualLaps(null);
-    setCompounds((current) => (count < current.length ? current.slice(0, count + 1) : [...current, ...Array<Compound>(count + 1 - current.length).fill(current[current.length - 1] ?? 'medium')]));
+    const next = adaptStrategy(track, laps, customStints ?? [], count);
+    if (!next) return;
+    setCompounds(next.stints.map((s) => s.compound));
+    setManualLaps(next.stints.map((s) => s.laps));
   };
   const setCompound = (index: number, compound: Compound) => setCompounds((current) => current.map((c, i) => (i === index ? compound : c)));
 
@@ -96,6 +131,7 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
 
   const start = () => {
     if (!chosen) return;
+    if (custom) saveStrategy(track.id, { stints: chosen }).catch(() => {});
     router.push({
       pathname: '/session',
       params: { track: track.id, laps: String(laps), strategy: encodeStrategy({ stints: chosen }), pit: String(breakMinutes * 60), ...(speed ? { speed } : {}) },
@@ -134,7 +170,7 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
             ))}
           <Appear delay={custom ? 0 : options.length * 120}>
             <Pressable
-              onPress={() => setChoice(custom ? 'recommended' : 'custom')}
+              onPress={toggleCustom}
               accessibilityRole="button"
               accessibilityLabel={custom ? 'Back to the suggested strategies' : 'Build your own strategy'}
             >
@@ -163,26 +199,25 @@ function Strategy({ track, laps, speed }: { track: Track; laps: number; speed?: 
           </Appear>
         </View>
 
-        {custom && (
-          <Builder track={track} laps={laps} compounds={compounds} stints={customStints} onStops={setStops} onCompound={setCompound} onMovePit={movePitTo} />
-        )}
-
         {stops > 0 && (
           <View style={styles.section}>
-            <SectionLabel>Pit stop length</SectionLabel>
-            <SegmentedControl options={BREAK_OPTIONS} value={String(breakMinutes) as BreakOption} onChange={(m) => chooseBreak(Number(m))} labelFor={(m) => `${m} min`} />
+            <Dropdown label="Pit stop length" options={BREAK_OPTIONS} value={String(breakMinutes) as BreakOption} onChange={(m) => chooseBreak(Number(m))} labelFor={(m) => `${m} min`} />
           </View>
         )}
 
-        <View style={styles.totals}>
-          <StatBlock label="Racing" value={formatDurationWords(racingSeconds)} size="small" />
-          <StatBlock label="Stops" value={chosen ? String(stops) : '–'} size="small" />
-          <StatBlock label="In the pits" value={stops > 0 ? formatDurationWords(pitSeconds) : '–'} size="small" />
-          <StatBlock label="Finish" value={chosen ? finish.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '–'} size="small" />
-        </View>
+        {custom && (
+          <Builder track={track} laps={laps} compounds={compounds} stints={customStints} onStops={setStops} onCompound={setCompound} onMovePit={movePitTo} pitRange={(pit) => (customStints ? pitRange(track, laps, customStints, pit) : null)} />
+        )}
+
       </ScrollView>
 
       <View style={styles.footer}>
+        <View style={styles.totals}>
+          <StatBlock label="Racing" value={formatDurationWords(racingSeconds)} size="tiny" />
+          <StatBlock label="Stops" value={chosen ? String(stops) : '–'} size="tiny" />
+          <StatBlock label="In the pits" value={stops > 0 ? formatDurationWords(pitSeconds) : '–'} size="tiny" />
+          <StatBlock label="Finish" value={chosen ? finish.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '–'} size="tiny" />
+        </View>
         <StartButton label={chosen ? 'Start Race' : 'Fix your strategy'} onPress={start} frame disabled={!chosen} />
       </View>
     </SafeAreaView>
@@ -239,6 +274,7 @@ function Builder({
   onStops,
   onCompound,
   onMovePit,
+  pitRange: rangeFor,
 }: {
   track: Track;
   laps: number;
@@ -247,58 +283,66 @@ function Builder({
   onStops: (stops: number) => void;
   onCompound: (index: number, compound: Compound) => void;
   onMovePit: (pit: number, lap: number) => void;
+  pitRange: (pit: number) => { first: number; last: number } | null;
 }) {
   const styles = useStyles();
   const t = useTheme();
+  const [showWindows, setShowWindows] = useState(false);
+  // the stint whose tire is being changed, after a tap on its tire on the line
+  const [editing, setEditing] = useState<number | null>(null);
+  // why a tire the player tapped but cannot have is not allowed; the tire is not changed
+  // (an object, so tapping the same tire again starts the 5 seconds again)
+  const [blocked, setBlocked] = useState<{ text: string } | null>(null);
+  useEffect(() => {
+    if (!blocked) return;
+    const timer = setTimeout(() => setBlocked(null), WARNING_SECONDS * 1000);
+    return () => clearTimeout(timer);
+  }, [blocked]);
   const minutes = Math.round((laps * track.lapTimeSeconds) / 60);
-  const problem = stints
-    ? null
-    : compounds.length > laps
-      ? `${laps} ${laps === 1 ? 'lap is' : 'laps are'} too short for ${compounds.length - 1} stops.`
-      : compounds.length === 1 && minutes > TIRES.hard.maxMinutes
-        ? `A race over ${TIRES.hard.maxMinutes} minutes needs a pit stop: even hards last ${TIRES.hard.maxMinutes} minutes at most.`
-        : compounds.reduce((sum, c) => sum + tireLaps(track, c, 'min'), 0) > laps
-          ? `A stint can't be shorter than its tire's minimum. Remove a stop or pick softer tires.`
-          : `These tires cannot last ${laps} laps (${formatDurationWords(laps * track.lapTimeSeconds)}). Add a stop or pick harder tires.`;
+  /** Why these tires cannot cover the race, or null if they can. */
+  const explain = (tires: readonly Compound[]): string | null =>
+    splitLaps(track, laps, tires)
+      ? null
+      : tires.length > laps
+        ? `${laps} ${laps === 1 ? 'lap is' : 'laps are'} too short for ${tires.length - 1} stops.`
+        : tires.length === 1 && minutes > TIRES.hard.maxMinutes
+          ? `A race over ${TIRES.hard.maxMinutes} minutes needs a pit stop: even hards last ${TIRES.hard.maxMinutes} minutes at most.`
+          : tires.reduce((sum, c) => sum + tireLaps(track, c, 'min'), 0) > laps
+            ? `A stint can't be shorter than its tire's minimum. Remove a stop or pick softer tires.`
+            : `These tires cannot last ${laps} laps (${formatDurationWords(laps * track.lapTimeSeconds)}). Add a stop or pick harder tires.`;
+  const problem = stints ? null : explain(compounds);
 
-  const ranges = stints ? stintRanges(stints) : [];
   return (
     <View style={styles.section}>
-      <SectionLabel>Pit stops</SectionLabel>
-      <SegmentedControl options={STOP_OPTIONS.slice(0, Math.min(MAX_STOPS, laps - 1) + 1)} value={String(compounds.length - 1) as (typeof STOP_OPTIONS)[number]} onChange={(s) => onStops(Number(s))} labelFor={(s) => (s === '0' ? 'None' : s)} />
+      <Dropdown label="Pit stops" options={STOP_OPTIONS.filter((s) => bestStrategy(track, laps, Number(s)) !== null)} value={String(compounds.length - 1) as (typeof STOP_OPTIONS)[number]} onChange={(s) => {
+          setEditing(null);
+          setBlocked(null);
+          onStops(Number(s));
+        }} labelFor={(s) => (s === '0' ? 'None' : s)} />
 
-      {stints ? <TireStrategyBar stints={stints} labels lapSeconds={track.lapTimeSeconds} onMovePit={onMovePit} /> : <Text style={styles.problem}>{problem}</Text>}
-      {stints && stints.length > 1 && <Text style={styles.muted}>Drag a pit stop left or right to change how long each stint runs.</Text>}
+      {stints ? (
+        <TireStrategyBar stints={stints} labels lapSeconds={track.lapTimeSeconds} onMovePit={onMovePit} pitRange={rangeFor} onTapTire={(i) => {
+            setBlocked(null);
+            setEditing((current) => (current === i ? null : i));
+          }} selectedTire={editing} />
+      ) : (
+        <Text style={styles.problem}>{problem}</Text>
+      )}
+      {stints && <Text style={styles.muted}>{stints.length > 1 ? 'Drag a pit stop to change how long a stint runs. Tap a tire to change it.' : 'Tap the tire to change it.'}</Text>}
 
-      <View>
-        {compounds.map((compound, i) => {
-          const stint = stints?.[i];
-          const range = ranges[i];
-          return (
-            <View key={i} style={[styles.stintRow, i === compounds.length - 1 && styles.stintRowLast]}>
-              <View style={styles.stintInfo}>
-                <Text style={styles.cardTitle}>Stint {i + 1}</Text>
-                <Text style={styles.muted}>{stint && range ? `Laps ${range.from}–${range.to} · ${formatDurationWords(stint.laps * track.lapTimeSeconds)}` : `${TIRES[compound].name}s`}</Text>
-              </View>
-              <View style={styles.picks}>
-                {COMPOUNDS.map((c) => (
-                  <Pressable
-                    key={c}
-                    onPress={() => onCompound(i, c)}
-                    style={[styles.pick, c === compound && styles.pickSelected]}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: c === compound }}
-                    accessibilityLabel={`Stint ${i + 1}: ${TIRES[c].name}`}
-                  >
-                    <TireIcon compound={c} letter size={t.size.tirePick} dimmed={c !== compound} />
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          );
-        })}
-      </View>
+      <Pressable
+        onPress={() => setShowWindows((s) => !s)}
+        style={styles.info}
+        accessibilityRole="button"
+        accessibilityLabel="How long each tire lasts"
+        accessibilityState={{ expanded: showWindows }}
+        hitSlop={t.spacing.sm}
+      >
+        <Ionicons name={showWindows ? 'information-circle' : 'information-circle-outline'} size={t.size.chevron + 4} color={t.colors.textSecondary} />
+        <Text style={styles.infoText}>Tire life</Text>
+      </Pressable>
 
+      {showWindows && (
       <View style={styles.legend}>
         {COMPOUNDS.map((c) => (
           <View key={c} style={styles.legendItem} accessible accessibilityLabel={`${TIRES[c].name}s: ${TIRES[c].minMinutes} to ${TIRES[c].maxMinutes} minutes, ${tireLaps(track, c, 'min')} to ${tireLaps(track, c, 'max')} laps here`}>
@@ -312,6 +356,38 @@ function Builder({
           </View>
         ))}
       </View>
+      )}
+
+      {editing !== null && editing < compounds.length && (
+        <View style={styles.editor}>
+          <Text style={styles.cardTitle}>Stint {editing + 1}</Text>
+          <View style={styles.picks}>
+            {COMPOUNDS.map((c) => {
+              // a tire that would leave the race without a valid strategy is greyed out and cannot be chosen
+              const why = explain(compounds.map((current, i) => (i === editing ? c : current)));
+              return (
+                <Pressable
+                  key={c}
+                  onPress={() => {
+                    if (why) return setBlocked({ text: why });
+                    setBlocked(null);
+                    onCompound(editing, c);
+                    setEditing(null);
+                  }}
+                  style={[styles.pick, c === compounds[editing] && styles.pickSelected, why !== null && styles.pickBlocked]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: c === compounds[editing], disabled: why !== null }}
+                  accessibilityLabel={`Stint ${editing + 1}: ${TIRES[c].name}${why ? `, not allowed. ${why}` : ''}`}
+                >
+                  <TireIcon compound={c} letter size={t.size.tirePick} dimmed={c !== compounds[editing] || why !== null} />
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      )}
+      {editing !== null && blocked !== null && <Text style={styles.problem}>{blocked.text}</Text>}
+
     </View>
   );
 }
@@ -359,16 +435,17 @@ const useStyles = makeStyles((t) => ({
   section: { gap: t.spacing.sm },
   muted: { ...t.typography.caption, color: t.colors.textMuted },
   problem: { ...t.typography.caption, color: t.colors.flag },
-  stintRow: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.md, paddingVertical: t.spacing.sm, borderBottomWidth: t.border.hairline, borderBottomColor: t.colors.border },
-  stintRowLast: { borderBottomWidth: 0 },
-  stintInfo: { flex: 1, gap: t.spacing.xxs },
+  editor: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: t.spacing.md },
   picks: { flexDirection: 'row', gap: t.spacing.xs },
   pick: { width: t.size.touch, height: t.size.touch, alignItems: 'center', justifyContent: 'center', borderRadius: t.radius.control, borderWidth: t.border.hairline, borderColor: t.colors.background },
+  pickBlocked: { opacity: t.opacity.unaffordable },
   pickSelected: { borderColor: t.colors.accent, backgroundColor: t.colors.raised },
+  info: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs, alignSelf: 'flex-start' },
+  infoText: { ...t.typography.caption, color: t.colors.textMuted },
   legend: { flexDirection: 'row', justifyContent: 'space-between', gap: t.spacing.sm, paddingTop: t.spacing.sm, borderTopWidth: t.border.hairline, borderTopColor: t.colors.border },
   legendItem: { flex: 1, alignItems: 'center', gap: t.spacing.xxs },
   legendValue: { ...t.typography.metaValue, color: t.colors.text },
   legendNote: { ...t.typography.micro, color: t.colors.textMuted },
-  totals: { flexDirection: 'row', justifyContent: 'space-between', gap: t.spacing.sm, paddingTop: t.spacing.md, borderTopWidth: t.border.hairline, borderTopColor: t.colors.border },
-  footer: { padding: t.spacing.screen, borderTopWidth: t.border.hairline, borderTopColor: t.colors.border },
+  totals: { flexDirection: 'row', justifyContent: 'space-between', gap: t.spacing.sm },
+  footer: { padding: t.spacing.screen, gap: t.spacing.md, borderTopWidth: t.border.hairline, borderTopColor: t.colors.border },
 }));

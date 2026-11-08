@@ -7,7 +7,7 @@ export function formatDurationWords(totalSeconds: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  if (h > 0) return m > 0 ? `${h} h ${m} min` : `${h} h`;
+  if (h > 0) return m > 0 ? `${h} hr ${m} min` : `${h} hr`;
   if (m > 0) return sec > 0 ? `${m} min ${sec} s` : `${m} min`;
   return `${sec} s`;
 }

@@ -62,22 +62,20 @@ export function looseStints(track: Pick<Track, 'lapTimeSeconds'>, stints: readon
 }
 
 /**
- * Shares the race's laps between stints on these compounds, every stint inside its tire's window. Among the ways to do
- * that it prefers stints of a whole number of minutes (as many as the race allows: a race that is not a whole number of
- * minutes long cannot have all of them), then the split closest to each tire's target life, in proportion (so a soft
- * stint is shorter than a hard one). Null if the tires cannot cover the distance exactly inside their windows.
+ * The cheapest way to share the race's laps between stints on these compounds, every stint inside its tire's window,
+ * where `cost(i, laps)` is what giving stint `i` that many laps costs. Null if the tires cannot cover the distance
+ * exactly inside their windows.
  */
-export function splitLaps(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: number, compounds: readonly Compound[]): Stint[] | null {
+function cheapestSplit(
+  track: Pick<Track, 'lapTimeSeconds'>,
+  totalLaps: number,
+  compounds: readonly Compound[],
+  cost: (stint: number, laps: number) => number,
+): { laps: number[]; cost: number } | null {
   const n = compounds.length;
   if (n === 0 || totalLaps < n) return null;
   const min = compounds.map((c) => minStintLaps(track, c, totalLaps, n));
   const max = compounds.map((c) => tireLaps(track, c, 'max'));
-  // The cost of a stint: 1000 for each that is not whole minutes (beats any distance from the target), plus how far it is
-  // from its tire's target, as a share of that target and squared.
-  const cost = (i: number, laps: number) => {
-    const share = (laps * track.lapTimeSeconds) / 60 / TIRES[compounds[i]].targetMinutes - 1;
-    return (isWholeMinutes(track, laps) ? 0 : 1000) + share * share;
-  };
   // best[used] = the cheapest way to give the stints so far `used` laps between them
   let best: number[] = Array<number>(totalLaps + 1).fill(Infinity);
   best[0] = 0;
@@ -104,19 +102,54 @@ export function splitLaps(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: numbe
     laps[i] = picks[i][left];
     left -= laps[i];
   }
-  return compounds.map((compound, i) => ({ compound, laps: laps[i] }));
+  return { laps, cost: best[totalLaps] };
 }
 
 /**
- * Moves the pit stop at the end of stint `pit` (0 is the first stop) to lap `toLap`, lengthening one of its two stints
- * and shortening the other. Both stay inside their tire's window, so the stop lands on the nearest lap that allows
- * that. It snaps to laps that keep both stints a whole number of minutes, unless that would leave the stop with nowhere
- * to go (fewer than two such laps): then any lap inside the windows works, so the stop can always be moved when the
- * windows allow it. The last stint is never moved directly: it only changes when the stop before it does. Returns the
- * same stints if nothing can move.
+ * Shares the race's laps between stints on these compounds, every stint inside its tire's window. Among the ways to do
+ * that it prefers stints of a whole number of minutes (as many as the race allows: a race that is not a whole number of
+ * minutes long cannot have all of them), then the split closest to each tire's target life, in proportion (so a soft
+ * stint is shorter than a hard one). Null if the tires cannot cover the distance exactly inside their windows.
  */
-export function movePit(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: number, stints: readonly Stint[], pit: number, toLap: number): Stint[] {
-  if (!Number.isInteger(pit) || pit < 0 || pit >= stints.length - 1) return [...stints];
+export function splitLaps(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: number, compounds: readonly Compound[]): Stint[] | null {
+  // The cost of a stint: 1000 for each that is not whole minutes (beats any distance from the target), plus how far it is
+  // from its tire's target, as a share of that target and squared.
+  const split = cheapestSplit(track, totalLaps, compounds, (i, laps) => {
+    const share = (laps * track.lapTimeSeconds) / 60 / TIRES[compounds[i]].targetMinutes - 1;
+    return (isWholeMinutes(track, laps) ? 0 : 1000) + share * share;
+  });
+  return split ? compounds.map((compound, i) => ({ compound, laps: split.laps[i] })) : null;
+}
+
+/**
+ * The strategy with `stops` stops that is closest to the `current` one, for when the player changes the number of
+ * stops. In order of importance: stints of a whole number of minutes, the first stint as close as possible to the
+ * current first stint, as many tires as possible the same as now (a new stint copies the last tire), then the other
+ * stints as close as possible to how long they are now. Null if no strategy with that many stops works.
+ */
+export function adaptStrategy(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: number, current: readonly Stint[], stops: number): Strategy | null {
+  if (stops < 0 || stops > MAX_STOPS) return null;
+  let best: { stints: Stint[]; cost: number } | null = null;
+  for (const compounds of sequences(stops + 1)) {
+    const split = cheapestSplit(track, totalLaps, compounds, (i, laps) => {
+      const now = current[i] ?? current[current.length - 1];
+      const loose = isWholeMinutes(track, laps) ? 0 : 1e9;
+      if (!now) return loose;
+      const same = compounds[i] === now.compound ? 0 : 1e3;
+      const away = Math.abs(laps - (current[i]?.laps ?? laps));
+      return loose + (i === 0 ? away * 1e6 : away) + same;
+    });
+    if (split && (!best || split.cost < best.cost)) best = { stints: compounds.map((compound, i) => ({ compound, laps: split.laps[i] })), cost: split.cost };
+  }
+  return best ? { stints: best.stints } : null;
+}
+
+/**
+ * The first and last lap the pit stop at the end of stint `pit` (0 is the first stop) can be on, with both stints beside
+ * it inside their tire's window. Null if it cannot be moved (or there is no such stop).
+ */
+export function pitRange(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: number, stints: readonly Stint[], pit: number): { first: number; last: number } | null {
+  if (!Number.isInteger(pit) || pit < 0 || pit >= stints.length - 1) return null;
   const n = stints.length;
   const before = stints.slice(0, pit).reduce((sum, s) => sum + s.laps, 0);
   const a = stints[pit];
@@ -124,15 +157,22 @@ export function movePit(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: number,
   const end = before + a.laps + b.laps;
   const first = Math.max(before + minStintLaps(track, a.compound, totalLaps, n), end - tireLaps(track, b.compound, 'max'));
   const last = Math.min(before + tireLaps(track, a.compound, 'max'), end - minStintLaps(track, b.compound, totalLaps, n));
-  if (first > last) return [...stints];
-  const laps: number[] = [];
-  for (let lap = first; lap <= last; lap++) laps.push(lap);
-  const looseAt = (lap: number) => (isWholeMinutes(track, lap - before) ? 0 : 1) + (isWholeMinutes(track, end - lap) ? 0 : 1);
-  const fewest = Math.min(...laps.map(looseAt));
-  const snapTo = laps.filter((lap) => looseAt(lap) === fewest);
-  // with fewer than two snap points there is nothing to drag between, so every lap in the windows is allowed
-  const choices = snapTo.length >= 2 ? snapTo : laps;
-  const lap = choices.reduce((nearest, l) => (Math.abs(l - toLap) < Math.abs(nearest - toLap) ? l : nearest));
+  return first <= last ? { first, last } : null;
+}
+
+/**
+ * Moves the pit stop at the end of stint `pit` (0 is the first stop) to lap `toLap`, lengthening one of its two stints
+ * and shortening the other. Both stay inside their tire's window, so the stop lands on the nearest lap that allows
+ * that, and every lap in between can be reached (a dragged stop does not skip to whole minutes, so the player can place
+ * it exactly). The last stint is never moved directly: it only changes when the stop before it does. Returns the same
+ * stints if nothing can move.
+ */
+export function movePit(track: Pick<Track, 'lapTimeSeconds'>, totalLaps: number, stints: readonly Stint[], pit: number, toLap: number): Stint[] {
+  const range = pitRange(track, totalLaps, stints, pit);
+  if (!range) return [...stints];
+  const before = stints.slice(0, pit).reduce((sum, s) => sum + s.laps, 0);
+  const end = before + stints[pit].laps + stints[pit + 1].laps;
+  const lap = Math.max(range.first, Math.min(range.last, Math.round(toLap)));
   return stints.map((s, i) => (i === pit ? { ...s, laps: lap - before } : i === pit + 1 ? { ...s, laps: end - lap } : s));
 }
 

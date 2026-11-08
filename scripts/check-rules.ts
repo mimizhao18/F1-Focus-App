@@ -31,7 +31,7 @@ import { glowHexFor, hexToRgb255 } from '../src/components/car3d/glow.ts';
 import { TRACK_LIST, isTrackUnlocked } from '../src/data/tracks/index.ts';
 import { applySessionToStreak, daysBetween, displayedStreak } from '../src/logic/streak.ts';
 import { OFFER_COUNT, formatTimeLeft, nextRefresh, offersForWeek, pickOffers, weekKey } from '../src/logic/shop.ts';
-import { MAX_STOPS, PIT_EXIT, TIRES, bestStrategy, decodeStrategy, encodeStrategy, isValidStrategy, minStops, movePit, pitLaps, splitLaps, stintIndexAt, stintRanges, stopperName, strategyOptions, tireLaps } from '../src/logic/strategy.ts';
+import { MAX_STOPS, PIT_EXIT, TIRES, adaptStrategy, bestStrategy, decodeStrategy, encodeStrategy, isValidStrategy, minStops, movePit, pitLaps, splitLaps, stintIndexAt, stintRanges, stopperName, strategyOptions, tireLaps } from '../src/logic/strategy.ts';
 import { DEFAULT_SETTINGS, KM_PER_MILE, cleanDriverCode, driverCodeFor, formatDistance, normalizeSettings } from '../src/logic/settings.ts';
 
 const track = { id: 'silverstone', lapLengthKm: 5.891, lapTimeSeconds: 90 };
@@ -150,8 +150,8 @@ assert.ok(maxJump < 0.3, `max heading jump ${maxJump}`);
 // duration wording and lap options
 assert.equal(formatDurationWords(900), '15 min');
 assert.equal(formatDurationWords(450), '7 min 30 s');
-assert.equal(formatDurationWords(4680), '1 h 18 min');
-assert.equal(formatDurationWords(3600), '1 h');
+assert.equal(formatDurationWords(4680), '1 hr 18 min');
+assert.equal(formatDurationWords(3600), '1 hr');
 assert.equal(formatDurationWords(45), '45 s');
 
 // race length slider: minutes snap to whole laps, and the slider never jumps back
@@ -586,13 +586,15 @@ assert.equal(stints(21, 0), 'M21'); // 31.5 min on one set: not a whole number o
 {
   const two = [{ compound: 'medium', laps: 24 }, { compound: 'soft', laps: 16 }]; // 36 min + 24 min at 90 s a lap
   assert.deepEqual(movePit(silverstone, 40, two, 0, 28).map((s) => s.laps), [28, 12]); // 42 + 18 min
-  assert.deepEqual(movePit(silverstone, 40, two, 0, 21).map((s) => s.laps), [20, 20]); // 21 laps would be 31.5 min: it lands on a whole minute
+  assert.deepEqual(movePit(silverstone, 40, two, 0, 21).map((s) => s.laps), [21, 19]); // every lap in between can be reached, whole minutes or not
+  for (let to = 20; to <= 30; to++) assert.equal(movePit(silverstone, 40, two, 0, to)[0].laps, to);
   assert.deepEqual(movePit(silverstone, 40, two, 0, 5).map((s) => s.laps), [20, 20]); // a medium needs 30 min, so it cannot get shorter
   assert.deepEqual(movePit(silverstone, 40, two, 0, 39).map((s) => s.laps), [30, 10]); // a soft needs 15 min, and a medium runs 45 at most
   assert.deepEqual(movePit(silverstone, 40, two, 1, 10), two); // the last tire is the end of the race and cannot be moved
   assert.deepEqual(movePit(silverstone, 40, two, -1, 10), two);
   assert.deepEqual(movePit(silverstone, 40, [{ compound: 'soft', laps: 20 }, { compound: 'soft', laps: 20 }], 0, 12).map((s) => s.laps), [20, 20]); // two softs have no room at all
-  // Monaco (70 s a lap): only 24 laps of softs is a whole number of minutes, but the stop can still move inside the windows
+  // Monaco (70 s a lap): only every sixth lap is a whole number of minutes, but the stop reaches every lap inside the windows
+  for (let to = 22; to <= 25; to++) assert.equal(movePit(monaco, 60, [{ compound: 'soft', laps: 24 }, { compound: 'medium', laps: 36 }], 0, to)[0].laps, to);
   const monacoPlan = [{ compound: 'soft', laps: 24 }, { compound: 'medium', laps: 36 }]; // 28 min + 42 min
   assert.deepEqual(movePit(monaco, 60, monacoPlan, 0, 22).map((s) => s.laps), [22, 38]);
   assert.deepEqual(movePit(monaco, 60, monacoPlan, 0, 25).map((s) => s.laps), [25, 35]);
@@ -610,6 +612,49 @@ assert.equal(stints(21, 0), 'M21'); // 31.5 min on one set: not a whole number o
       assert.deepEqual(moved.map((s) => s.compound), three.map((s) => s.compound));
       assert.equal(moved.reduce((sum, s) => sum + s.laps, 0), 60);
       assert.deepEqual(moved.slice(0, pit).concat(moved.slice(pit + 2)), three.slice(0, pit).concat(three.slice(pit + 2))); // only the two stints beside the stop change
+    }
+  }
+}
+
+// changing the number of stops gives the closest strategy that works, with the first stint kept as close as possible
+{
+  const adapt = (laps, from, to) => {
+    const current = bestStrategy(silverstone, laps, from).stints;
+    const next = adaptStrategy(silverstone, laps, current, to);
+    return next ? encodeStrategy(next) : null;
+  };
+  assert.equal(adapt(60, 1, 2), 'm24-m26-s10'); // m24-h36 -> the first 24 laps stay as they are
+  assert.equal(adapt(40, 1, 2), 'm20-s10-s10'); // two more stints need at least 10 laps each, so the first can only keep 20 of its 24
+  assert.equal(adapt(40, 1, 0), 'h40'); // one stint on one set of tires
+  assert.equal(adapt(60, 1, 0), null); // 90 minutes cannot be run without a stop
+  assert.equal(adaptStrategy(silverstone, 60, [], 1) !== null, true); // no current strategy: any good one
+  assert.equal(adaptStrategy(silverstone, 60, bestStrategy(silverstone, 60, 1).stints, 4), null);
+  // every result is valid, has the right number of stops, and has the first stint as close to the current one as any valid strategy could
+  for (const laps of [30, 41, 53, 60, 75, 80]) {
+    for (const from of [0, 1, 2]) {
+      const current = bestStrategy(silverstone, laps, from)?.stints;
+      if (!current) continue;
+      for (const to of [0, 1, 2, 3]) {
+        const next = adaptStrategy(silverstone, laps, current, to);
+        const anyValid = bestStrategy(silverstone, laps, to);
+        assert.equal(next === null, anyValid === null, `${laps} laps, ${from} -> ${to} stops`);
+        if (!next) continue;
+        assert.ok(isValidStrategy(silverstone, laps, next), `${laps} laps, ${from} -> ${to} stops`);
+        assert.equal(next.stints.length, to + 1);
+        // brute force: the nearest first stint any valid strategy with this many stops can have
+        let nearest = Infinity;
+        for (let first = 1; first <= laps; first++) {
+          for (const c of ['soft', 'medium', 'hard']) {
+            if (first < tireLaps(silverstone, c, 'min') && !(to === 0 && laps * 90 < 900)) continue;
+            if (first > tireLaps(silverstone, c, 'max')) continue;
+            const rest = laps - first;
+            if (to === 0 ? rest !== 0 : rest < (to) * 10 || rest > to * 43) continue;
+            nearest = Math.min(nearest, Math.abs(first - current[0].laps));
+          }
+        }
+        // whole-minute stints come first, so the first stint may sit one step further away to keep them
+        assert.ok(Math.abs(next.stints[0].laps - current[0].laps) <= nearest + 1, `${laps} laps, ${from} -> ${to} stops: first stint ${next.stints[0].laps}, nearest ${nearest}`);
+      }
     }
   }
 }

@@ -18,6 +18,9 @@ const useStyles = makeStyles((t) => ({
   lane: { flex: 1, justifyContent: 'center' },
   line: { position: 'absolute', left: 0, right: 0, flexDirection: 'row' },
   pin: { position: 'absolute', top: 0 },
+  // The stretch a dragged pit stop can reach: the line there is greyed down. A light tint vanished on the white hard tire and
+  // the yellow medium; a dark one shows on every color.
+  zone: { position: 'absolute', backgroundColor: t.colors.background, opacity: t.opacity.dimmed },
   label: { position: 'absolute', width: LABEL_WIDTH, marginLeft: -LABEL_WIDTH / 2, textAlign: 'center', ...t.typography.microLabel, color: t.colors.textSecondary },
   labelNumber: { fontFamily: t.typography.microMono.fontFamily, color: t.colors.text },
 }));
@@ -40,6 +43,9 @@ export function TireStrategyBar({
   lapSeconds,
   completedLaps,
   onMovePit,
+  pitRange,
+  onTapTire,
+  selectedTire,
 }: {
   stints: readonly Stint[];
   size?: 'large' | 'small';
@@ -48,12 +54,18 @@ export function TireStrategyBar({
   completedLaps?: number;
   /** Makes every pit stop draggable along the line: called with the stop (0 is the first) and the lap it is dragged to. */
   onMovePit?: (pit: number, lap: number) => void;
+  /** The laps a pit stop can be dragged between; while one is dragged, that stretch of the line is faintly lit. */
+  pitRange?: (pit: number) => { first: number; last: number } | null;
+  /** Makes every tire tappable: called with the stint the tire ends (0 is the first). */
+  onTapTire?: (stint: number) => void;
+  /** The stint whose tire is being changed: its tire is drawn a little larger. */
+  selectedTire?: number | null;
 }) {
   const styles = useStyles();
   const t = useTheme();
   const laneRef = useRef<HostInstance>(null);
   // the stop being dragged, and where the lane is on screen (measured when the touch starts, so scrolling is allowed for)
-  const drag = useRef<{ pit: number; left: number; width: number } | null>(null);
+  const drag = useRef<{ pit: number | null; tap: number | null; left: number; width: number; startX: number; moved: boolean } | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
   const total = stints.reduce((sum, s) => sum + s.laps, 0);
   if (total === 0) return null;
@@ -65,27 +77,44 @@ export function TireStrategyBar({
   const ends = stintRanges(stints).map((range, i) => ({ stint: stints[i], start: range.from - 1, end: range.to }));
 
   const lapAt = (pageX: number, left: number, width: number) => Math.round(Math.max(0, Math.min(1, (pageX - left) / width)) * total);
-  // the touch takes hold of the nearest stop (never the last tire, which is only the end of the race)
+  // A touch takes hold of the nearest tire. Moved sideways it drags that tire's pit stop (never the last tire, which is only
+  // the end of the race); lifted without moving it is a tap on the tire, if the touch started on it.
   const grab = (e: GestureResponderEvent) => {
     const pageX = e.nativeEvent.pageX;
     laneRef.current?.measureInWindow((left, _top, width) => {
-      if (width <= 0 || ends.length < 2) return;
-      let pit = 0;
-      for (let i = 1; i < ends.length - 1; i++) if (Math.abs(left + (ends[i].end / total) * width - pageX) < Math.abs(left + (ends[pit].end / total) * width - pageX)) pit = i;
-      drag.current = { pit, left, width };
-      setDragging(pit);
-      onMovePit?.(pit, lapAt(pageX, left, width));
+      if (width <= 0) return;
+      const at = (i: number) => left + (ends[i].end / total) * width;
+      let nearest = 0;
+      for (let i = 1; i < ends.length; i++) if (Math.abs(at(i) - pageX) < Math.abs(at(nearest) - pageX)) nearest = i;
+      const onTire = Math.abs(at(nearest) - pageX) <= iconSize / 2 + t.spacing.xs;
+      drag.current = {
+        pit: onMovePit && nearest < ends.length - 1 ? nearest : null,
+        tap: onTapTire && onTire ? nearest : null,
+        left,
+        width,
+        startX: pageX,
+        moved: false,
+      };
     });
   };
   const move = (e: GestureResponderEvent) => {
     const d = drag.current;
-    if (d) onMovePit?.(d.pit, lapAt(e.nativeEvent.pageX, d.left, d.width));
+    if (!d || d.pit === null) return;
+    const pageX = e.nativeEvent.pageX;
+    if (!d.moved && Math.abs(pageX - d.startX) < t.spacing.xs) return; // still a tap
+    if (!d.moved) {
+      d.moved = true;
+      setDragging(d.pit);
+    }
+    onMovePit?.(d.pit, lapAt(pageX, d.left, d.width));
   };
   const release = () => {
+    const d = drag.current;
     drag.current = null;
     setDragging(null);
+    if (d && !d.moved && d.tap !== null) onTapTire?.(d.tap);
   };
-  const touch = onMovePit && ends.length > 1
+  const touch = (onMovePit && ends.length > 1) || onTapTire
     ? {
         onStartShouldSetResponder: () => true,
         onMoveShouldSetResponder: () => true,
@@ -122,8 +151,15 @@ export function TireStrategyBar({
             ];
           })}
         </View>
+        {dragging !== null &&
+          (() => {
+            const range = pitRange?.(dragging);
+            if (!range) return null;
+            // the stretch of the line the dragged stop can reach, lit very faintly
+            return <View style={[styles.zone, { left: `${(range.first / total) * 100}%`, width: `${((range.last - range.first) / total) * 100}%`, top: (iconSize - lineHeight) / 2, height: lineHeight, pointerEvents: 'none' }]} />;
+          })()}
         {ends.map(({ stint, end }, i) => (
-          <View key={i} style={[styles.pin, { left: `${(end / total) * 100}%`, marginLeft: -iconSize / 2, pointerEvents: 'none' }, dragging === i && { transform: [{ scale: 1.2 }] }]}>
+          <View key={i} style={[styles.pin, { left: `${(end / total) * 100}%`, marginLeft: -iconSize / 2, pointerEvents: 'none' }, (dragging === i || selectedTire === i) && { transform: [{ scale: 1.2 }] }]}>
             <TireIcon compound={stint.compound} size={iconSize} dimmed={end > done} />
           </View>
         ))}

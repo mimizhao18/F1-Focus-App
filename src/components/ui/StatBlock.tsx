@@ -10,6 +10,8 @@ const useStyles = makeStyles((t) => ({
   large: { ...t.typography.statLarge, color: t.colors.text },
   medium: { ...t.typography.stat, color: t.colors.text },
   small: { ...t.typography.statSmall, color: t.colors.text },
+  tiny: { ...t.typography.metaValue, color: t.colors.text },
+  tinyLabel: { ...t.typography.microLabel, color: t.colors.textMuted },
   unit: { ...t.typography.caption, color: t.colors.textMuted },
 }));
 
@@ -24,13 +26,13 @@ export function StatBlock({
   label: string;
   value: string | number;
   unit?: string;
-  size?: 'large' | 'medium' | 'small';
+  size?: 'large' | 'medium' | 'small' | 'tiny';
   align?: 'left' | 'center';
 }) {
   const styles = useStyles();
   return (
     <View style={[styles.block, align === 'center' && styles.center]} accessible accessibilityLabel={`${label}: ${value}${unit ? ` ${unit}` : ''}`}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={size === 'tiny' ? styles.tinyLabel : styles.label}>{label}</Text>
       <View style={styles.valueRow}>
         <Text style={styles[size]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
           {value}
