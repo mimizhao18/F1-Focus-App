@@ -6,6 +6,8 @@ Built with Expo (React Native) and TypeScript. Runs on a phone through Expo Go.
 
 **Status:** version 1 is complete, and it has grown since: 23 circuits, a tire strategy builder with pit stops, a 3D car garage with era-accurate liveries, and distraction rules that penalize leaving the app mid-race. See [BACKLOG.md](BACKLOG.md) for what comes next.
 
+**Demo:** [Watch the app demo on YouTube](https://www.youtube.com/watch?v=gDQKh8B2N34)
+
 *Unofficial fan project. It is not affiliated with or endorsed by Formula 1, the FIA or any team; team and sponsor names appear only as theme.*
 
 ## Highlights
