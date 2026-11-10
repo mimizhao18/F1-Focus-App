@@ -4,7 +4,17 @@ A mobile focus-timer app with a Formula 1 theme. You pick a race length in laps,
 
 Built with Expo (React Native) and TypeScript. Runs on a phone through Expo Go.
 
-**Status:** version 1 is complete (all 10 build steps), plus the race-length slider and the Monaco and Spa tracks. See [BACKLOG.md](BACKLOG.md) for what comes next.
+**Status:** version 1 is complete, and it has grown since: 23 circuits, a tire strategy builder with pit stops, a 3D car garage with era-accurate liveries, and distraction rules that penalize leaving the app mid-race. See [BACKLOG.md](BACKLOG.md) for what comes next.
+
+*Unofficial fan project. It is not affiliated with or endorsed by Formula 1, the FIA or any team; team and sponsor names appear only as theme.*
+
+## Highlights
+
+- **Tech stack:** Expo SDK 58, React Native, TypeScript, Expo Router, `@react-three/fiber` + `three` for the 3D car, `react-native-svg` for tracks and strategy graphics, AsyncStorage for local persistence.
+- **Strategy builder:** drag pit stops to set stint lengths, with strict per-compound tire windows and whole-minute stints (`src/logic/strategy.ts`).
+- **3D garage:** procedurally built cars for five F1 eras, each with team liveries (`src/components/car3d`, `src/data/liveries`).
+- **Tested game rules:** laps, rewards, streaks, distraction penalties and paint output are covered by `npm run check`.
+- **Design system:** every color, font and spacing value comes from one tokens file, so screens never hard-code styles.
 
 ## Running the app
 
@@ -177,9 +187,11 @@ Three circuits: **Silverstone**, **Monaco** and **Spa-Francorchamps**. Each trac
 
 ## Known issues and next steps
 
-See [BACKLOG.md](BACKLOG.md): UI design pass, XP and credit balance, car design, keeping the screen awake during a race, and the longer-term multiplayer and distraction-blocking ideas.
+See [BACKLOG.md](BACKLOG.md): XP and credit balance, car design, and the longer-term multiplayer and distraction-blocking ideas.
 
 Expo projects change quickly between releases, so `AGENTS.md` tells coding assistants to check the current Expo docs for the installed SDK before using any Expo API.
+
+## More design and gameplay notes
 
 - Home: level, credits and a thin XP bar under them; the 3D car over a soft glow in the car's color; a corner-ticked strip of streak, races and distance; and a Start Race button with a thin red outer outline.
 - The bottom bar is a flat glass strip with text labels only: the active tab is red with a thin line above it, and Home sits on a red trapezoid (wider at the bottom) with a thin red line along each slanted side, echoing the Start Race button.

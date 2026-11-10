@@ -48,3 +48,6 @@ docs/livery-detail/wip/
 
 # Claude Code local files
 .claude/
+
+# Renders of real F1 liveries and sponsor logos (kept locally, not published)
+docs/**/*.jpg
